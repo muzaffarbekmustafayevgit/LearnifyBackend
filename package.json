@@ -15,7 +15,7 @@
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "nodemon server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
@@ -23,9 +23,11 @@
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "express": "^4.18.2",
-    "express-validator": "^6.14.3",
-    "jsonwebtoken": "^9.0.0",
-    "mongoose": "^7.0.0"
+    "express-list-endpoints": "^7.1.1",
+    "express-validator": "^6.15.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.0.0",
+    "nodemailer": "^7.0.6"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"

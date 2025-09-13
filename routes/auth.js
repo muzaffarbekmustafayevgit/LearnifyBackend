@@ -1,29 +1,22 @@
-// routes/auth.js
 const express = require('express');
 const router = express.Router();
-const { body } = require('express-validator');
-const authController = require('../controllers/authController');
+const { register, activate, login } = require('../controllers/authController');
+const { check } = require('express-validator');
 
-// Register
-router.post(
-  '/register',
-  [
-    body('name').trim().notEmpty().withMessage('Name bo\'sh bo\'lmasin').isLength({ max: 100 }),
-    body('email').isEmail().withMessage('To\'g\'ri email kiriting').normalizeEmail(),
-    body('password').isLength({ min: 6 }).withMessage('Parol kamida 6 ta belgidan iborat bo\'lishi kerak'),
-    body('role').optional().isIn(['student','teacher','admin']).withMessage('Noto\'g\'ri role')
-  ],
-  authController.register
-);
+// register
+router.post('/register', [
+  check('name', 'Ism majburiy').not().isEmpty(),
+  check('email', 'Email majburiy').isEmail(),
+  check('password', 'Parol kamida 6 ta belgidan iborat bo‘lsin').isLength({ min: 6 })
+], register);
 
-// Login
-router.post(
-  '/login',
-  [
-    body('email').isEmail().withMessage('To\'g\'ri email kiriting').normalizeEmail(),
-    body('password').notEmpty().withMessage('Parol talab qilinadi')
-  ],
-  authController.login
-);
+// activate
+router.post('/activate', activate);
+
+// login
+router.post('/login', [
+  check('email', 'Email majburiy').isEmail(),
+  check('password', 'Parol majburiy').exists()
+], login);
 
 module.exports = router;
