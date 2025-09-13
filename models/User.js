@@ -1,4 +1,3 @@
-// models/User.js
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
@@ -6,6 +5,17 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
   role: { type: String, enum: ['student','teacher','admin'], default: 'student' },
+  
+  // Email aktivatsiya
+  isActive: { type: Boolean, default: false },
+  activationCode: { type: String },
+  activationExpires: { type: Date },
+
+  // Teacher uchun qo‘shimcha
+  subject: { type: String, trim: true },
+  faculty: { type: String, trim: true },
+  experienceYears: { type: Number, default: 0 },
+
   createdAt: { type: Date, default: Date.now }
 });
 

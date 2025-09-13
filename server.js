@@ -3,6 +3,10 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
+const listEndpoints = require('express-list-endpoints');
+
+// ... barcha route’larni ulab bo‘lgandan keyin:
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,7 +29,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: 'Ichki server xatoligi' });
 });
-
+console.log(listEndpoints(app));
 app.listen(PORT, () => {
   console.log(`Server ${PORT}-porta ishlayapti`);
 });
