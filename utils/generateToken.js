@@ -1,11 +1,19 @@
 const jwt = require('jsonwebtoken');
 
-const generateToken = (user) => {
-  return jwt.sign(
-    { id: user._id, role: user.role }, // payload
+const generateTokens = (user) => {
+  const accessToken = jwt.sign(
+    { id: user._id, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '15m' } // tez tugaydi
   );
+
+  const refreshToken = jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_REFRESH_SECRET,
+    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' } // uzoq yashaydi
+  );
+
+  return { accessToken, refreshToken };
 };
 
-module.exports = generateToken;
+module.exports = generateTokens;
