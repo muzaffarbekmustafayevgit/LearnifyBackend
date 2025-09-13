@@ -138,3 +138,24 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: 'Serverda xatolik yuz berdi' });
   }
 };
+exports.logout = async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) return res.status(400).json({ message: 'Refresh token kerak' });
+
+  try {
+    const user = await User.findOne({ refreshToken });
+    if (!user) {
+      return res.status(400).json({ message: 'Bunday refresh token topilmadi' });
+    }
+
+    // 🔑 refreshToken’ni tozalaymiz
+    user.refreshToken = null;
+    await user.save();
+
+    res.json({ message: 'Logout muvaffaqiyatli bajarildi' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Serverda xatolik yuz berdi' });
+  }
+};

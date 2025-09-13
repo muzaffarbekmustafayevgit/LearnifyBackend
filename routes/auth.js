@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { register, activate, login } = require('../controllers/authController');
-const { check } = require('express-validator');
+const { register, activate, login, logout } = require('../controllers/authController');
 
+
+
+const { check } = require('express-validator');
+router.post('/logout', logout);
 // register
 router.post('/register', [
   check('name', 'Ism majburiy').not().isEmpty(),
