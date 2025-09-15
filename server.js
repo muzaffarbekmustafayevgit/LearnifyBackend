@@ -27,6 +27,7 @@ app.use('/api/lessons', require('./routes/lessonRoutes'));
 app.use('/api/tests', require('./routes/testRoutes'));
 app.use('/api/progress', require('./routes/progressRoutes'));
 app.use('/api/certificates', require('./routes/certificateRoutes'));
+app.use('/api/achievements', require('./routes/achievementRoutes')); // ✅ qo‘shildi
 
 // Root
 app.get('/', (req, res) => res.send('LMS service ishlamoqda 🚀'));

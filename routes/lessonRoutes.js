@@ -1,15 +1,26 @@
 const express = require('express');
+const { 
+  createLesson, 
+  getLessonsByCourse, 
+  getLessonById, 
+  updateLesson, 
+  deleteLesson, 
+  completeLesson, 
+  retryQuiz 
+} = require('../controllers/lessonController');
+const authMiddleware = require('../middlewares/authMiddleware');
+
 const router = express.Router();
-const auth = require('../middlewares/authMiddleware');
-const controller = require('../controllers/progressController');
 
-// Darsni tugatish
-router.post('/complete', auth(['student']), controller.completeLesson);
+// 🔹 Lesson CRUD
+router.post('/', authMiddleware(['teacher']), createLesson);
+router.get('/course/:courseId', authMiddleware(), getLessonsByCourse);
+router.get('/:id', authMiddleware(), getLessonById);
+router.put('/:id', authMiddleware(['teacher']), updateLesson);
+router.delete('/:id', authMiddleware(['teacher']), deleteLesson);
 
-// Kurs progressini olish
-router.get('/:courseId', auth(['student']), controller.getProgress);
-
-// Sertifikat olish
-router.get('/:courseId/certificate', auth(['student']), controller.getCertificate);
+// 🔹 Student actions
+router.post('/:id/complete', authMiddleware(['student']), completeLesson);
+router.post('/:id/retry', authMiddleware(['student']), retryQuiz);
 
 module.exports = router;
