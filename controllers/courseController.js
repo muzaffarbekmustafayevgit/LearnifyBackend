@@ -11,6 +11,15 @@ exports.createCourse = async (req, res) => {
     res.status(500).json({ message: 'Server xatosi' });
   }
 };
+exports.getAllCourses = async (req, res) => {
+  try {
+    const courses = await Course.find().populate('lessons');
+    res.json(courses);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server xatosi' });
+  }
+};
 
 exports.getMyCourses = async (req, res) => {
   try {
