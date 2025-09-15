@@ -1,25 +1,30 @@
 const express = require('express');
-const router = express.Router();
-const { register, activate, login, logout } = require('../controllers/authController');
-
-
-
 const { check } = require('express-validator');
-router.post('/logout', logout);
-// register
+const { register, activate, login, logout, getProfile } = require('../controllers/authController');
+const authMiddleware = require('../middlewares/authMiddleware');
+
+const router = express.Router();
+
+// 🔹 Register
 router.post('/register', [
-  check('name', 'Ism majburiy').not().isEmpty(),
+  check('name', 'Ism majburiy').notEmpty(),
   check('email', 'Email majburiy').isEmail(),
   check('password', 'Parol kamida 6 ta belgidan iborat bo‘lsin').isLength({ min: 6 })
 ], register);
 
-// activate
+// 🔹 Activate
 router.post('/activate', activate);
 
-// login
+// 🔹 Login
 router.post('/login', [
   check('email', 'Email majburiy').isEmail(),
   check('password', 'Parol majburiy').exists()
 ], login);
+
+// 🔹 Logout
+router.post('/logout', authMiddleware(), logout);
+
+// 🔹 Profile
+router.get('/profile', authMiddleware(), getProfile);
 
 module.exports = router;

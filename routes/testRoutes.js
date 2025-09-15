@@ -1,8 +1,10 @@
 const express = require('express');
-const router = express.Router();
-const auth = require('../middlewares/authMiddleware');
-const testController = require('../controllers/testController');
+const { submitTest } = require('../controllers/testController');
+const authMiddleware = require('../middlewares/authMiddleware');
 
-router.post('/submit', auth(['student']), testController.submitTest);
+const router = express.Router();
+
+// 🔹 Submit test
+router.post('/submit', authMiddleware(['student']), submitTest);
 
 module.exports = router;

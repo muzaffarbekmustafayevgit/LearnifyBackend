@@ -16,7 +16,11 @@ const UserSchema = new mongoose.Schema({
   faculty: { type: String, trim: true },
   experienceYears: { type: Number, default: 0 },
 
+  // Gamification
+  points: { type: Number, default: 0 },
+  rank: { type: String, default: 'Beginner' }, // Beginner, Intermediate, Pro...
+  badges: [{ type: String, default: [] }],
+ // masalan: "Quiz Master", "Fast Learner"
+
   createdAt: { type: Date, default: Date.now }
 });
-
-module.exports = mongoose.model('User', UserSchema);
