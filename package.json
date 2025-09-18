@@ -1,0 +1,37 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/muzaffarbekmustafayevgit/LearnifyBackend#readme",
+  "bugs": {
+    "url": "https://github.com/muzaffarbekmustafayevgit/LearnifyBackend/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muzaffarbekmustafayevgit/LearnifyBackend.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "nodemon server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.2",
+    "express-list-endpoints": "^7.1.1",
+    "express-validator": "^6.15.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.0.0",
+    "nodemailer": "^7.0.6",
+    "swagger-autogen": "^2.23.7",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
