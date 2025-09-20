@@ -18,9 +18,13 @@ const UserSchema = new mongoose.Schema({
 
   // Gamification
   points: { type: Number, default: 0 },
-  rank: { type: String, default: 'Beginner' }, // Beginner, Intermediate, Pro...
+  rank: { type: String, default: 'Beginner' },
   badges: [{ type: String, default: [] }],
- // masalan: "Quiz Master", "Fast Learner"
+
+  // 🔑 Refresh token saqlash
+  refreshToken: { type: String },
 
   createdAt: { type: Date, default: Date.now }
 });
+
+module.exports = mongoose.model('User', UserSchema);

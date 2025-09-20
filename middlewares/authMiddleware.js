@@ -1,6 +1,5 @@
 const jwt = require('jsonwebtoken');
 
-
 const authMiddleware = (roles = []) => {
   return (req, res, next) => {
     try {
@@ -20,7 +19,12 @@ const authMiddleware = (roles = []) => {
       next();
     } catch (err) {
       console.error(err);
-      return res.status(401).json({ message: 'Token yaroqsiz yoki muddati o‘tgan' });
+
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ message: 'Token muddati tugagan. Yangi token oling.' });
+      }
+
+      return res.status(401).json({ message: 'Token yaroqsiz' });
     }
   };
 };
