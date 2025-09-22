@@ -8,7 +8,7 @@ const {
   updateUser,
   deleteUser
 } = require('../controllers/userController');
-const authMiddleware = require('../middlewares/authMiddleware'); // To'g'ri import
+const {authMiddleware} = require('../middlewares/authMiddleware'); // To'g'ri import
 
 // Har bir funksiyani tekshirish
 

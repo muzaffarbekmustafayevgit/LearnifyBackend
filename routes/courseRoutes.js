@@ -8,19 +8,17 @@ const {
   deleteCourse,
   completeCourse
 } = require('../controllers/courseController');
-const authMiddleware = require('../middlewares/authMiddleware');
+const { authMiddleware } = require('../middlewares/authMiddleware'); // ✅ To'g'ri import
 
 const router = express.Router();
 
-// 🔹 Course CRUD
-router.post('/', authMiddleware(['teacher']), createCourse);        // Yaratish
-router.get('/', authMiddleware(), getAllCourses);                  // Barcha kurslar
-router.get('/my', authMiddleware(), getMyCourses);                 // Mening kurslarim
-router.get('/:id', authMiddleware(), getCourse);                   // Bitta kurs
-router.put('/:id', authMiddleware(['teacher']), updateCourse);     // Yangilash
-router.delete('/:id', authMiddleware(['teacher']), deleteCourse);  // O‘chirish
-
-// 🔹 Complete course (student)
+// ✅ To'g'ri ishlatish
+router.post('/', authMiddleware(['admin', 'teacher']), createCourse);
+router.get('/', getAllCourses);
+router.get('/my', authMiddleware(), getMyCourses);
+router.get('/:id', getCourse);
+router.put('/:id', authMiddleware(['admin', 'teacher']), updateCourse);
+router.delete('/:id', authMiddleware(['admin']), deleteCourse);
 router.post('/:id/complete', authMiddleware(['student']), completeCourse);
 
 module.exports = router;

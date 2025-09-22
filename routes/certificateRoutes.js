@@ -1,6 +1,6 @@
 const express = require('express');
 const { generateCertificate, getMyCertificates } = require('../controllers/certificateController');
-const authMiddleware = require('../middlewares/authMiddleware');
+const {authMiddleware} = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 

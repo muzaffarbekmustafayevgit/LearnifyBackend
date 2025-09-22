@@ -1,6 +1,6 @@
 const express = require('express');
 const { completeLesson, updateProgress, getProgress } = require('../controllers/progressController');
-const authMiddleware = require('../middlewares/authMiddleware');
+const {authMiddleware} = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
