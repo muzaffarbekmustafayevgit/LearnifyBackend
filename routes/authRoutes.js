@@ -1,7 +1,7 @@
 const express = require('express');
 const { check } = require('express-validator');
 const { register, activate, login, logout, getProfile } = require('../controllers/authController');
-const authMiddleware = require('../middlewares/authMiddleware');
+const { authMiddleware } = require('../middlewares/authMiddleware'); // destructure qilamiz
 
 const router = express.Router();
 
@@ -22,9 +22,9 @@ router.post('/login', [
 ], login);
 
 // 🔹 Logout
-router.post('/logout', authMiddleware(), logout);
+router.post('/logout', authMiddleware, logout); // 🔹 () olib tashlandi
 
 // 🔹 Profile
-router.get('/profile', authMiddleware(), getProfile);
+router.get('/profile', authMiddleware, getProfile); // 🔹 () olib tashlandi
 
 module.exports = router;
