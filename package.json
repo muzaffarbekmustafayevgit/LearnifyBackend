@@ -16,7 +16,8 @@
   "main": "server.js",
   "scripts": {
     "start": "nodemon server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+     "build-swagger": "npm run swagger && node server.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
