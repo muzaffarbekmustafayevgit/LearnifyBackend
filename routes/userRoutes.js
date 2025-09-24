@@ -3,20 +3,25 @@ const express = require('express');
 const router = express.Router();
 const {
   getUsers,
-  getUserById, 
+  getUserById,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  getProfile,
+  updateProfile
 } = require('../controllers/userController');
-const {authMiddleware} = require('../middlewares/authMiddleware'); // To'g'ri import
+const { requireRole, verifyToken } = require('../middlewares/authMiddleware');
+const { validateUser } = require('../middlewares/validationMiddleware');
 
-// Har bir funksiyani tekshirish
+// Public routes - faqat token tekshirish
+router.get('/profile', verifyToken, getProfile);
+router.put('/profile', verifyToken, updateProfile);
 
-// Faqat adminlar uchun route'lar
-router.get('/', authMiddleware(['admin']), getUsers);
-router.get('/:id', authMiddleware(['admin']), getUserById);
-router.post('/', authMiddleware(['admin']), createUser);
-router.put('/:id', authMiddleware(['admin']), updateUser);
-router.delete('/:id', authMiddleware(['admin']), deleteUser);
+// Admin only routes
+router.get('/admin/users', requireRole(['admin']), getUsers);
+router.get('/admin/users/:id', requireRole(['admin']), getUserById);
+router.post('/admin/users', requireRole(['admin']), validateUser, createUser);
+router.put('/admin/users/:id', requireRole(['admin']), validateUser, updateUser);
+router.delete('/admin/users/:id', requireRole(['admin']), deleteUser);
 
 module.exports = router;

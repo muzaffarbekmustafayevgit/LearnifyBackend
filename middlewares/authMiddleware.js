@@ -1,62 +1,112 @@
+// middleware/authMiddleware.js
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-// Asosiy auth middleware
-// Asosiy auth middleware (funksiya sifatida)
-const authMiddleware = (roles = []) => {
-  return (req, res, next) => {
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Token topilmadi' });
-      }
+const jwtSecret = process.env.JWT_SECRET;
 
-      const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-      req.user = decoded;
-
-      // Role tekshirish
-      if (roles.length && !roles.includes(decoded.role)) {
-        return res.status(403).json({ message: 'Sizda ruxsat yo‘q' });
-      }
-
-      next();
-    } catch (err) {
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({ message: 'Token muddati tugagan' });
-      }
-      return res.status(401).json({ message: 'Token yaroqsiz' });
+// Asosiy token tekshirish middleware
+exports.verifyToken = async (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Kirish tokeni talab qilinadi"
+      });
     }
-  };
+
+    const decoded = jwt.verify(token, jwtSecret);
+    const user = await User.findById(decoded.id).select('-password');
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Token yaroqsiz"
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "Hisob aktivlashtirilmagan"
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (err) {
+    if (err.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: "Yaroqsiz token"
+      });
+    }
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: "Token muddati tugagan"
+      });
+    }
+    
+    console.error("Auth middleware error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server xatosi"
+    });
+  }
 };
 
-
-// Admin tekshiruvi uchun middleware
-const verifyAdmin = (req, res, next) => {
+// Admin uchun middleware
+exports.verifyAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Admin huquqi talab qilinadi' });
+    return res.status(403).json({
+      success: false,
+      message: "Admin huquqi talab qilinadi"
+    });
   }
   next();
 };
 
-// Role asosida tekshirish
-const requireRole = (roles = []) => {
+// Teacher uchun middleware
+exports.verifyTeacher = (req, res, next) => {
+  if (!req.user || (req.user.role !== 'teacher' && req.user.role !== 'admin')) {
+    return res.status(403).json({
+      success: false,
+      message: "Teacher yoki admin huquqi talab qilinadi"
+    });
+  }
+  next();
+};
+
+// Role asosida tekshirish (universal)
+exports.requireRole = (roles = []) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ message: 'Avtorizatsiya talab qilinadi' });
+      return res.status(401).json({
+        success: false,
+        message: 'Avtorizatsiya talab qilinadi'
+      });
     }
 
     if (roles.length && !roles.includes(req.user.role)) {
-      return res.status(403).json({ message: 'Sizda ruxsat yoʻq' });
+      return res.status(403).json({
+        success: false,
+        message: 'Sizda ruxsat yoʻq'
+      });
     }
 
     next();
   };
 };
 
-// ✅ To‘g‘ri eksport qilamiz
-module.exports = {
-  authMiddleware,
-  verifyAdmin,
-  requireRole
+// Student uchun qisqa middleware
+exports.verifyStudent = (req, res, next) => {
+  if (!req.user || (req.user.role !== 'student' && req.user.role !== 'admin')) {
+    return res.status(403).json({
+      success: false,
+      message: "Student yoki admin huquqi talab qilinadi"
+    });
+  }
+  next();
 };

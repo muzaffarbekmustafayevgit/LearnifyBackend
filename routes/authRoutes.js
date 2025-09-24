@@ -1,30 +1,42 @@
+// routes/authRoutes.js
 const express = require('express');
-const { check } = require('express-validator');
-const { register, activate, login, logout, getProfile } = require('../controllers/authController');
-const { authMiddleware } = require('../middlewares/authMiddleware'); // destructure qilamiz
-
 const router = express.Router();
+const authController = require('../controllers/authController');
+const { validateUser } = require('../middlewares/validationMiddleware');
+const authMiddleware = require('../middlewares/authMiddleware');
 
-// 🔹 Register
-router.post('/register', [
-  check('name', 'Ism majburiy').notEmpty(),
-  check('email', 'Email majburiy').isEmail(),
-  check('password', 'Parol kamida 6 ta belgidan iborat bo‘lsin').isLength({ min: 6 })
-], register);
+// ================== PUBLIC ROUTES ==================
 
-// 🔹 Activate
-router.post('/activate', activate);
+// Ro'yxatdan o'tish
+router.post('/register', validateUser, authController.register);
 
-// 🔹 Login
-router.post('/login', [
-  check('email', 'Email majburiy').isEmail(),
-  check('password', 'Parol majburiy').exists()
-], login);
+// Hisobni aktivlashtirish
+router.post('/activate', authController.activate);
 
-// 🔹 Logout
-router.post('/logout', authMiddleware, logout); // 🔹 () olib tashlandi
+// Kirish
+router.post('/login', authController.login);
 
-// 🔹 Profile
-router.get('/profile', authMiddleware, getProfile); // 🔹 () olib tashlandi
+// Token yangilash
+router.post('/refresh-token', authController.refreshToken);
+
+// Parolni unutish
+router.post('/forgot-password', authController.forgotPassword);
+
+// Parolni tiklash
+router.post('/reset-password', authController.resetPassword);
+
+// ================== PROTECTED ROUTES ==================
+
+// Chiqish
+router.post('/logout', authMiddleware.verifyToken, authController.logout);
+
+// Joriy foydalanuvchi ma'lumotlari
+router.get('/me', authMiddleware.verifyToken, authController.getCurrentUser);
+
+// Parolni yangilash
+router.put('/change-password', authMiddleware.verifyToken, authController.changePassword);
+
+// Profilni yangilash
+router.put('/profile', authMiddleware.verifyToken, authController.updateProfile);
 
 module.exports = router;

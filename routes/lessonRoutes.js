@@ -1,3 +1,4 @@
+// routes/lessonRoutes.js
 const express = require('express');
 const { 
   createLesson, 
@@ -8,19 +9,37 @@ const {
   completeLesson, 
   retryQuiz 
 } = require('../controllers/lessonController');
-const { authMiddleware } = require('../middlewares/authMiddleware'); // ✅ To'g'ri import
+const { 
+  verifyToken, 
+  requireRole 
+} = require('../middlewares/authMiddleware'); // middleware (birlik) papkasi
 
 const router = express.Router();
 
-// 🔹 Lesson CRUD
-router.post('/', authMiddleware(['admin', 'teacher']), createLesson);
-router.get('/course/:courseId', authMiddleware(), getLessonsByCourse);
-router.get('/:id', authMiddleware(), getLessonById);
-router.put('/:id', authMiddleware(['admin', 'teacher']), updateLesson);
-router.delete('/:id', authMiddleware(['admin']), deleteLesson);
+// 🔐 Barcha route'lar token talab qiladi
+router.use(verifyToken);
 
-// 🔹 Student actions
-router.post('/:id/complete', authMiddleware(['student']), completeLesson);
-router.post('/:id/retry', authMiddleware(['student']), retryQuiz);
+// 📚 Lesson CRUD operatsiyalari
+
+// ➕ Yangi dars yaratish (faqat teacher/admin)
+router.post('/', requireRole(['teacher', 'admin']), createLesson);
+
+// 🔍 Kurs bo'yicha darslarni olish (hammaga ochiq)
+router.get('/course/:courseId', getLessonsByCourse);
+
+// 🔍 Darsni ID bo'yicha olish (hammaga ochiq)
+router.get('/:id', getLessonById);
+
+// ✏️ Darsni yangilash (faqat teacher/admin)
+router.put('/:id', requireRole(['teacher', 'admin']), updateLesson);
+
+// 🗑️ Darsni o'chirish (faqat admin)
+router.delete('/:id', requireRole(['admin']), deleteLesson);
+
+// ✅ Darsni tugallash (faqat student)
+router.post('/:id/complete', requireRole(['student']), completeLesson);
+
+// 🔄 Quizni qayta urinish (faqat student)
+router.post('/:id/retry', requireRole(['student']), retryQuiz);
 
 module.exports = router;
