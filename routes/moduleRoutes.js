@@ -1,5 +1,5 @@
+// routes/moduleRoutes.js
 const express = require('express');
-const { authMiddleware } = require('../middlewares/authMiddleware');
 const {
   createModule,
   getModule,
@@ -7,16 +7,21 @@ const {
   deleteModule,
   addLessonToModule
 } = require('../controllers/moduleController');
+const { 
+  verifyToken, 
+  requireRole 
+} = require('../middlewares/authMiddleware'); // middlewares (ko'plik) papkasi
 
 const router = express.Router();
 
-// 🔹 Module CRUD
-router.post('/', authMiddleware(['teacher']), createModule);
-router.get('/:id', authMiddleware(), getModule);
-router.put('/:id', authMiddleware(['teacher']), updateModule);
-router.delete('/:id', authMiddleware(['teacher']), deleteModule);
+// 🔐 Barcha route'lar token talab qiladi
+router.use(verifyToken);
 
-// 🔹 Lesson qo‘shish
-router.post('/:id/lessons', authMiddleware(['teacher']), addLessonToModule);
+// 📚 Module CRUD operatsiyalari
+router.post('/', requireRole(['teacher', 'admin']), createModule);
+router.get('/:id', getModule);
+router.put('/:id', requireRole(['teacher', 'admin']), updateModule);
+router.delete('/:id', requireRole(['teacher', 'admin']), deleteModule);
+router.post('/:id/lessons', requireRole(['teacher', 'admin']), addLessonToModule);
 
 module.exports = router;

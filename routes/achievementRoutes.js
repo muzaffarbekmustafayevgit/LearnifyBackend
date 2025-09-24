@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const achievementController = require('../controllers/achievementController');
-const {authMiddleware} = require('../middlewares/authMiddleware');
+const { verifyToken, requireRole } = require('../middlewares/authMiddleware');
 
-// Foydalanuvchining o‘z achievements
-router.get('/my', authMiddleware(), achievementController.getUserAchievements);
+// Foydalanuvchining o'z achievements
+router.get('/my', verifyToken, achievementController.getUserAchievements);
 
 // Barcha achievements (leaderboard)
-router.get('/', authMiddleware(), achievementController.getAllAchievements);
+router.get('/', verifyToken, achievementController.getAllAchievements);
 
-// Yangi achievement yaratish
-router.post('/', authMiddleware(), achievementController.createAchievement);
+// Yangi achievement yaratish (faqat admin/teacher)
+router.post('/', verifyToken, requireRole(['admin', 'teacher']), achievementController.createAchievement);
 
 module.exports = router;
