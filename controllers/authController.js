@@ -1,4 +1,3 @@
-// controllers/authController.js
 const { validationResult } = require("express-validator");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -26,9 +25,9 @@ const generateRefreshToken = (user) => {
   );
 };
 
-// Email transporter
+// ✅ TO'G'RILANGAN: Email transporter
 const createTransporter = () => {
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({ // <- createTransport deb o'zgartirildi
     service: "gmail",
     auth: { 
       user: process.env.EMAIL_USER, 
@@ -36,7 +35,6 @@ const createTransporter = () => {
     }
   });
 };
-
 // ================== REGISTER ==================
 exports.register = async (req, res) => {
   try {
@@ -97,8 +95,10 @@ exports.register = async (req, res) => {
           </div>
         `
       });
+      console.log('✅ Aktivatsiya kodi emailga yuborildi');
     } catch (emailError) {
-      console.error('Email yuborishda xato:', emailError);
+      console.error('❌ Email yuborishda xato:', emailError);
+      // Email xatosini foydalanuvchiga ko'rsatmaslik, lekin log qilish
     }
 
     res.status(201).json({
@@ -113,7 +113,7 @@ exports.register = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Register error:", err);
+    console.error("❌ Register error:", err);
     res.status(500).json({ 
       success: false,
       message: "Server xatosi. Iltimos keyinroq urunib ko'ring.",
@@ -121,6 +121,7 @@ exports.register = async (req, res) => {
     });
   }
 };
+
 
 // ================== ACTIVATE ACCOUNT ==================
 exports.activate = async (req, res) => {
