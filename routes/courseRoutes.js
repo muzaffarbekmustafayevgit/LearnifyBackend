@@ -6,25 +6,41 @@ const { verifyToken, requireRole } = require("../middlewares/authMiddleware");
 // 📚 Ommaviy kurslar (token talab qilmaydi)
 router.get("/", courseController.getAllCourses);
 
+// 🔍 CREATE so'rovi uchun handler (frontend prefetch uchun)
+router.get("/create", (req, res) => {
+  res.status(405).json({
+    success: false,
+    error: "Method Not Allowed",
+    message: "Kurs yaratish uchun POST metodidan foydalaning: POST /api/courses"
+  });
+});
+
 // 🔐 Quyidagilardan boshlab token talab qilinadi
 router.use(verifyToken);
 
-// ➕ YANGI: Kurs yaratish (faqat teacher/admin)
-router.post("/", requireRole(["teacher", "admin"]), courseController.createCourse);
-
-// Mening kurslarim
+// 👤 Mening kurslarim (faqat teacher/admin)
 router.get("/my-courses", requireRole(["teacher", "admin"]), courseController.getMyCourses);
 
-// Statistika
+// ➕ Kurs yaratish (faqat teacher/admin)
+router.post("/", requireRole(["teacher", "admin"]), courseController.createCourse);
+
+// 📊 Statistika (faqat teacher/admin)
 router.get("/:id/stats", requireRole(["teacher", "admin"]), courseController.getCourseStats);
 
-// Yangilash, o'chirish va boshqalar
+// ✏️ Yangilash (faqat teacher/admin)
 router.put("/:id", requireRole(["teacher", "admin"]), courseController.updateCourse);
+router.patch("/:id", requireRole(["teacher", "admin"]), courseController.updateCourse);
+
+// 🗑️ O'chirish (faqat teacher/admin)
 router.delete("/:id", requireRole(["teacher", "admin"]), courseController.deleteCourse);
+
+// 📢 Nashr qilish (faqat teacher/admin)
 router.patch("/:id/publish", requireRole(["teacher", "admin"]), courseController.publishCourse);
+
+// ✅ Tugallangan deb belgilash (faqat teacher/admin)
 router.patch("/:id/complete", requireRole(["teacher", "admin"]), courseController.completeCourse);
 
-// ❗ Eng oxirida umumiy kurs olish
+// ❗ Umumiy kurs olish (token talab qilmaydi, lekin kurs statusiga qarab cheklovlar)
 router.get("/:id", courseController.getCourse);
 
 module.exports = router;

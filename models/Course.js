@@ -1,4 +1,6 @@
+// models/Course.js - TO'G'RILANGAN
 const mongoose = require('mongoose');
+const slugify = require("slugify");
 
 const CourseSchema = new mongoose.Schema({
   // Asosiy ma'lumotlar
@@ -54,9 +56,24 @@ const CourseSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-// updatedAt avtomatik yangilanishi
-CourseSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
+// Slug avtomatik generatsiya - TAKRORLANMAS
+CourseSchema.pre("save", async function (next) {
+  if (!this.slug && this.title) {
+    let baseSlug = slugify(this.title, { lower: true, strict: true });
+    let slug = baseSlug;
+    let counter = 1;
+    
+    // Takrorlanmas slug yaratish
+    while (true) {
+      const existingCourse = await mongoose.model('Course').findOne({ slug });
+      if (!existingCourse) break;
+      
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+    }
+    
+    this.slug = slug;
+  }
   next();
 });
 
