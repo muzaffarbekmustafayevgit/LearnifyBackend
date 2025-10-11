@@ -4,63 +4,52 @@ const Module = require('../models/Module');
 const Lesson = require('../models/Lesson');
 const mongoose = require('mongoose');
 
+// ✅ Auth middleware tekshiruvi qo'shamiz
+const checkAuth = (req, res, next) => {
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({
+      success: false,
+      message: 'Avtorizatsiya talab qilinadi'
+    });
+  }
+  next();
+};
+
 // ✅ Kurs yaratish
-exports.createCourse = async (req, res) => {
+exports.createCourse = [checkAuth, async (req, res) => {
   try {
-    const { 
-      title, 
-      description, 
-      shortDescription, 
-      category, 
-      subcategory, 
-      level, 
-      price,
-      thumbnail,
-      objectives,
-      requirements 
-    } = req.body;
+    const { title, description, category, price } = req.body;
 
     // Validatsiya
-    if (!title || !description || !category) {
+    if (!title || !category) {
       return res.status(400).json({
         success: false,
-        message: "Sarlavha, tavsif va kategoriya talab qilinadi"
+        message: 'Sarlavha va kategoriya talab qilinadi'
       });
     }
 
-    const course = new Course({
-      title: title.trim(),
-      description: description.trim(),
-      shortDescription: shortDescription?.trim() || description.substring(0, 200),
+    const newCourse = await Course.create({
+      title,
+      description,
       category,
-      subcategory,
-      level: level || 'all',
-      teacher: req.user.id,
       price: price || { amount: 0, currency: 'USD', isFree: true },
-      thumbnail,
-      learningOutcomes: objectives || [],
-      requirements: requirements || [],
+      teacher: req.user.id,
       status: 'draft'
     });
-
-    await course.save();
-    await course.populate('teacher', 'name email avatar');
 
     res.status(201).json({
       success: true,
       message: 'Kurs muvaffaqiyatli yaratildi',
-      data: { course }
+      data: { course: newCourse }
     });
-
   } catch (err) {
-    console.error('Create course error:', err);
+    console.error("Course create error:", err);
     res.status(500).json({
       success: false,
-      message: 'Kurs yaratishda xatolik',
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      message: "Server xatosi: " + err.message
     });
   }
-};
+}];
 
 // ✅ Barcha kurslarni olish
 exports.getAllCourses = async (req, res) => {
@@ -74,11 +63,20 @@ exports.getAllCourses = async (req, res) => {
       maxPrice, 
       search,
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      status = 'all'
     } = req.query;
 
-    const query = { isDeleted: false, status: 'published' };
+    const query = { isDeleted: false };
     
+    // Status filteri
+    if (status && status !== 'all') {
+      query.status = status;
+    } else {
+      // Agar status 'all' bo'lsa, barcha statusdagi kurslarni ko'rsatamiz
+      query.status = { $in: ['published', 'draft', 'pending'] };
+    }
+
     // Filtrlash
     if (category) query.category = category;
     if (level && level !== 'all') query.level = level;
@@ -100,6 +98,7 @@ exports.getAllCourses = async (req, res) => {
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
+    // Database dan kurslarni olish
     const courses = await Course.find(query)
       .populate('teacher', 'name avatar rating')
       .populate('lessons')
@@ -124,7 +123,7 @@ exports.getAllCourses = async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Get courses error:', err);
+    console.error('❌ Get courses error:', err);
     res.status(500).json({
       success: false,
       message: 'Kurslarni olishda xatolik'
@@ -133,25 +132,84 @@ exports.getAllCourses = async (req, res) => {
 };
 
 // ✅ Mening kurslarim
+// controllers/courseController.js - TO'G'RILANGAN getMyCourses
+// controllers/courseController.js - TO'G'RILANGAN getMyCourses
 exports.getMyCourses = async (req, res) => {
   try {
-    const { page = 1, limit = 10, status } = req.query;
+    console.log('=== GET MY COURSES DEBUG ===');
+    console.log('1. Request user:', req.user);
     
+    // User ma'lumotlarini tekshirish
+    if (!req.user || !req.user.id) {
+      console.log('❌ ERROR: User ma\'lumotlari yo\'q');
+      return res.status(400).json({
+        success: false,
+        message: 'Foydalanuvchi ma\'lumotlari topilmadi'
+      });
+    }
+
+    console.log('2. User ID:', req.user.id);
+    console.log('3. User ID type:', typeof req.user.id);
+
+    const mongoose = require('mongoose');
+    
+    // User ID ni ObjectId ga convert qilish
+    let teacherId;
+    try {
+      teacherId = new mongoose.Types.ObjectId(req.user.id);
+      console.log('4. Converted teacherId:', teacherId);
+    } catch (error) {
+      console.log('❌ ERROR: User ID ni ObjectId ga convert qilishda xato:', error);
+      return res.status(400).json({
+        success: false,
+        message: 'Noto‘g‘ri foydalanuvchi ID formati'
+      });
+    }
+
+    const { 
+      page = 1, 
+      limit = 10, 
+      status 
+    } = req.query;
+
+    console.log('5. Query params:', { page, limit, status });
+
+    // Query ni yaratish - ObjectId bilan
     const query = { 
-      teacher: req.user.id, 
+      teacher: teacherId, // ObjectId ni ishlatamiz
       isDeleted: false 
     };
     
-    if (status) query.status = status;
+    // Status filteri
+    if (status && status !== 'all') {
+      query.status = status;
+    }
 
+    console.log('6. Database query:', JSON.stringify(query));
+
+    // Database so'rovi
     const courses = await Course.find(query)
-      .populate('lessons')
-      .populate('teacher', 'name avatar')
+      .populate('teacher', 'name avatar email')
+      .populate('lessons', 'title duration order')
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
     const total = await Course.countDocuments(query);
+
+    console.log('7. Topilgan kurslar soni:', courses.length);
+    
+    // Kurslarni tekshirish
+    if (courses.length > 0) {
+      console.log('8. Birinchi kurs:', {
+        id: courses[0]._id,
+        title: courses[0].title,
+        teacher: courses[0].teacher,
+        status: courses[0].status
+      });
+    }
+
+    console.log('=== DEBUG TAMAMLANDI ===');
 
     res.json({
       success: true,
@@ -160,46 +218,54 @@ exports.getMyCourses = async (req, res) => {
         pagination: {
           currentPage: parseInt(page),
           totalPages: Math.ceil(total / limit),
-          totalCourses: total
+          totalCourses: total,
+          hasNextPage: page < Math.ceil(total / limit),
+          hasPrevPage: page > 1
         }
       }
     });
 
   } catch (err) {
-    console.error('Get my courses error:', err);
+    console.error('❌ Get my courses error:', err);
     res.status(500).json({
       success: false,
-      message: 'Kurslarni olishda xatolik'
+      message: 'Kurslarni olishda xatolik: ' + err.message
     });
   }
 };
-
 // ✅ Kursni olish
 exports.getCourse = async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log('=== GET COURSE DEBUG ===');
+    console.log('1. Requested course ID:', id);
+    console.log('2. Request user:', req.user);
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.log('❌ ERROR: Invalid course ID format');
       return res.status(400).json({
         success: false,
         message: 'Noto‘g‘ri kurs ID si'
       });
     }
 
+    // FAQAT MAVJUD FIELD LARNI POPULATE QILAMIZ
     const course = await Course.findById(id)
       .populate('teacher', 'name avatar bio rating experienceYears')
-      .populate({
-        path: 'modules',
-        match: { isDeleted: false },
-        populate: {
-          path: 'lessons',
-          match: { isDeleted: false, status: 'published' },
-          select: 'title type duration order'
-        }
-      })
-      .populate('lessons', 'title type duration order');
+      .populate('lessons', 'title type duration order'); // Faqat lessons
+
+    console.log('3. Found course:', course ? {
+      id: course._id,
+      title: course.title,
+      status: course.status,
+      teacher: course.teacher?._id,
+      isDeleted: course.isDeleted,
+      lessonsCount: course.lessons?.length
+    } : 'Course not found');
 
     if (!course || course.isDeleted) {
+      console.log('❌ ERROR: Course not found or deleted');
       return res.status(404).json({
         success: false,
         message: 'Kurs topilmadi'
@@ -207,15 +273,25 @@ exports.getCourse = async (req, res) => {
     }
 
     // Faqat published kurslar yoki o'qituvchi/o'quvchi ko'ra oladi
-    if (course.status !== 'published' && 
-        course.teacher._id.toString() !== req.user.id && 
-        req.user.role !== 'admin') {
+    const isOwner = req.user && course.teacher._id.toString() === req.user.id;
+    const isAdmin = req.user && req.user.role === 'admin';
+    
+    console.log('4. Access check:', {
+      courseStatus: course.status,
+      isOwner,
+      isAdmin,
+      hasUser: !!req.user
+    });
+
+    if (course.status !== 'published' && !isOwner && !isAdmin) {
+      console.log('❌ ERROR: Access denied - not owner/admin and course not published');
       return res.status(403).json({
         success: false,
         message: 'Ushbu kursga kirish huquqi yo‘q'
       });
     }
 
+    console.log('✅ SUCCESS: Course access granted');
     res.json({
       success: true,
       data: { course }
@@ -225,13 +301,13 @@ exports.getCourse = async (req, res) => {
     console.error('Get course error:', err);
     res.status(500).json({
       success: false,
-      message: 'Kursni olishda xatolik'
+      message: 'Kursni olishda xatolik: ' + err.message
     });
   }
 };
 
 // ✅ Kursni yangilash
-exports.updateCourse = async (req, res) => {
+exports.updateCourse = [checkAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -245,14 +321,21 @@ exports.updateCourse = async (req, res) => {
 
     const course = await Course.findOne({
       _id: id,
-      teacher: req.user.id,
       isDeleted: false
     });
 
     if (!course) {
       return res.status(404).json({
         success: false,
-        message: 'Kurs topilmadi yoki sizga tegishli emas'
+        message: 'Kurs topilmadi'
+      });
+    }
+
+    // Faqat o'qituvchi yoki admin yangilashi mumkin
+    if (course.teacher.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Sizda ushbu kursni yangilash huquqi yo‘q'
       });
     }
 
@@ -260,7 +343,7 @@ exports.updateCourse = async (req, res) => {
     const allowedFields = [
       'title', 'description', 'shortDescription', 'category', 'subcategory',
       'level', 'price', 'thumbnail', 'learningOutcomes', 'requirements',
-      'tags', 'meta'
+      'tags', 'meta', 'status'
     ];
 
     Object.keys(updateData).forEach(key => {
@@ -293,18 +376,20 @@ exports.updateCourse = async (req, res) => {
       message: 'Kursni yangilashda xatolik'
     });
   }
-};
+}];
 
 // ✅ Kursni nashr qilish
+// controllers/courseController.js - TO'G'RILANGAN VERSIYA
+
+// ✅ Kursni nashr qilish - TO'G'RILANGAN
 exports.publishCourse = async (req, res) => {
   try {
     const { id } = req.params;
 
     const course = await Course.findOne({
       _id: id,
-      teacher: req.user.id,
       isDeleted: false
-    }).populate('lessons').populate('modules');
+    }).populate('lessons'); // Faqat mavjud fieldlarni populate qilamiz
 
     if (!course) {
       return res.status(404).json({
@@ -313,11 +398,30 @@ exports.publishCourse = async (req, res) => {
       });
     }
 
+    // Faqat o'qituvchi yoki admin nashr qilishi mumkin
+    if (course.teacher.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Sizda ushbu kursni nashr qilish huquqi yo‘q'
+      });
+    }
+
     // Kursni nashr qilish uchun minimal talablar
-    if (course.lessons.length === 0) {
+    if (!course.lessons || course.lessons.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'Kursda kamida bitta dars bo‘lishi kerak'
+      });
+    }
+
+    // Kurs ma'lumotlarini tekshirish
+    const requiredFields = ['title', 'description', 'category'];
+    const missingFields = requiredFields.filter(field => !course[field]);
+    
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Quyidagi maydonlar to'ldirilishi kerak: ${missingFields.join(', ')}`
       });
     }
 
@@ -335,57 +439,30 @@ exports.publishCourse = async (req, res) => {
     console.error('Publish course error:', err);
     res.status(500).json({
       success: false,
-      message: 'Kursni nashr qilishda xatolik'
+      message: 'Kursni nashr qilishda xatolik: ' + err.message
     });
   }
 };
 
-// ✅ Soft-delete kurs
-exports.deleteCourse = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const course = await Course.findOneAndUpdate(
-      { 
-        _id: id, 
-        teacher: req.user.id, 
-        isDeleted: false 
-      },
-      { 
-        isDeleted: true,
-        status: 'archived'
-      },
-      { new: true }
-    );
-
-    if (!course) {
-      return res.status(404).json({
-        success: false,
-        message: 'Kurs topilmadi yoki sizga tegishli emas'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Kurs muvaffaqiyatli o‘chirildi'
-    });
-
-  } catch (err) {
-    console.error('Delete course error:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Kursni o‘chirishda xatolik'
-    });
-  }
-};
-
-// ✅ Kursni tugallangan deb belgilash
+// ✅ Tugallangan deb belgilash - TO'G'RILANGAN
 exports.completeCourse = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const course = await Course.findById(id);
-    if (!course || course.isDeleted) {
+    // ID validatsiyasi
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Noto'g'ri kurs ID formati"
+      });
+    }
+
+    const course = await Course.findOne({
+      _id: id,
+      isDeleted: false
+    });
+
+    if (!course) {
       return res.status(404).json({
         success: false,
         message: "Kurs topilmadi"
@@ -408,6 +485,7 @@ exports.completeCourse = async (req, res) => {
     }
 
     course.isCompleted = true;
+    course.completedAt = new Date();
     await course.save();
 
     res.json({
@@ -420,32 +498,100 @@ exports.completeCourse = async (req, res) => {
     console.error('Complete course error:', err);
     res.status(500).json({
       success: false,
-      message: 'Kursni tugallashda xatolik'
+      message: 'Kursni tugallashda xatolik: ' + err.message
     });
   }
 };
-
-// ✅ Kurs statistikasi
-exports.getCourseStats = async (req, res) => {
+// ✅ DELETE kurs - TO'G'RILANGAN VERSIYA
+exports.deleteCourse = [checkAuth, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const course = await Course.findById(id);
-    if (!course || course.teacher.toString() !== req.user.id) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Noto‘g‘ri kurs ID si'
+      });
+    }
+
+    const course = await Course.findOne({
+      _id: id,
+      isDeleted: false
+    });
+
+    if (!course) {
       return res.status(404).json({
         success: false,
         message: 'Kurs topilmadi'
       });
     }
 
-    // Turli statistik ma'lumotlarni yig'ish
+    // Faqat o'qituvchi yoki admin o'chirishi mumkin
+    if (course.teacher.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Sizda ushbu kursni o‘chirish huquqi yo‘q'
+      });
+    }
+
+    // Nashr qilingan kursni o'chirishni cheklash
+    if (course.status === 'published') {
+      return res.status(400).json({
+        success: false,
+        message: 'Nashr qilingan kursni o‘chirib bo‘lmaydi. Avval arxivlang.'
+      });
+    }
+
+    // Soft delete qilish
+    course.isDeleted = true;
+    course.status = 'archived';
+    course.deletedAt = new Date();
+    await course.save();
+
+    res.json({
+      success: true,
+      message: 'Kurs muvaffaqiyatli o‘chirildi'
+    });
+
+  } catch (err) {
+    console.error('Delete course error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Kursni o‘chirishda xatolik: ' + err.message
+    });
+  }
+}];
+
+
+// ✅ Kurs statistikasi
+exports.getCourseStats = [checkAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const course = await Course.findById(id);
+    if (!course || course.isDeleted) {
+      return res.status(404).json({
+        success: false,
+        message: 'Kurs topilmadi'
+      });
+    }
+
+    // Faqat o'qituvchi yoki admin ko'ra oladi
+    if (course.teacher.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Sizda ushbu statistikani ko‘rish huquqi yo‘q'
+      });
+    }
+
+    // Statistik ma'lumotlar
     const stats = {
-      totalStudents: 0, // Progress modelidan olish kerak
+      totalStudents: 0,
       completionRate: 0,
       averageRating: course.rating?.average || 0,
       totalLessons: course.lessons.length,
-      totalDuration: 0, // Darslarning davomiyligini yig'ish
-      revenue: 0 // To'lov tizimi bilan integratsiya
+      totalDuration: 0,
+      revenue: 0
     };
 
     res.json({
@@ -460,4 +606,4 @@ exports.getCourseStats = async (req, res) => {
       message: 'Statistikani olishda xatolik'
     });
   }
-};
+}];
