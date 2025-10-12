@@ -1,4 +1,3 @@
-// routes/lessonRoutes.js
 const express = require('express');
 const { 
   createLesson, 
@@ -7,12 +6,10 @@ const {
   updateLesson, 
   deleteLesson, 
   completeLesson, 
+  submitTest,
   retryQuiz 
 } = require('../controllers/lessonController');
-const { 
-  verifyToken, 
-  requireRole 
-} = require('../middlewares/authMiddleware'); // middleware (birlik) papkasi
+const { verifyToken, requireRole } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
@@ -24,22 +21,26 @@ router.use(verifyToken);
 // ➕ Yangi dars yaratish (faqat teacher/admin)
 router.post('/', requireRole(['teacher', 'admin']), createLesson);
 
-// 🔍 Kurs bo'yicha darslarni olish (hammaga ochiq)
+// 🔍 Kurs bo'yicha darslarni olish
 router.get('/course/:courseId', getLessonsByCourse);
 
-// 🔍 Darsni ID bo'yicha olish (hammaga ochiq)
+// 🔍 Darsni ID bo'yicha olish
 router.get('/:id', getLessonById);
 
 // ✏️ Darsni yangilash (faqat teacher/admin)
 router.put('/:id', requireRole(['teacher', 'admin']), updateLesson);
+router.patch('/:id', requireRole(['teacher', 'admin']), updateLesson);
 
-// 🗑️ Darsni o'chirish (faqat admin)
-router.delete('/:id', requireRole(['admin']), deleteLesson);
+// 🗑️ Darsni o'chirish (faqat teacher/admin)
+router.delete('/:id', requireRole(['teacher', 'admin']), deleteLesson);
 
 // ✅ Darsni tugallash (faqat student)
-router.post('/:id/complete', requireRole(['student']), completeLesson);
+router.post('/complete', requireRole(['student']), completeLesson);
+
+// 📝 Test topshirish (faqat student)
+router.post('/submit-test', requireRole(['student']), submitTest);
 
 // 🔄 Quizni qayta urinish (faqat student)
-router.post('/:id/retry', requireRole(['student']), retryQuiz);
+router.post('/retry', requireRole(['student']), retryQuiz);
 
 module.exports = router;

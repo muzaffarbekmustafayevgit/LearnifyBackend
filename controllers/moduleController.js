@@ -115,3 +115,20 @@ exports.addLessonToModule = async (req, res) => {
     res.status(500).json({ message: "Server xatosi" });
   }
 };
+
+exports.getModulesByCourse = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const modules = await Module.find({ course: courseId, isDeleted: false })
+      .populate('lessons', 'title duration type')
+      .sort({ order: 1 });
+
+    res.status(200).json({
+      success: true,
+      data: { modules },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Modulelarni olishda xatolik" });
+  }
+};
