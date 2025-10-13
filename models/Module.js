@@ -1,4 +1,6 @@
+// models/Module.js - YANGILANGAN
 const mongoose = require('mongoose');
+
 const ModuleSchema = new mongoose.Schema({
   // Asosiy ma'lumotlar
   title: { type: String, required: true, trim: true },
@@ -68,10 +70,10 @@ ModuleSchema.virtual('lessonCount').get(function() {
 });
 
 ModuleSchema.virtual('totalDuration').get(function() {
-  // Lessons dan davomiylikni yig'ish (agar Lesson modelida duration bo'lsa)
   return this.estimatedDuration;
 });
 
 // JSON ga virtual maydonlarni qo'shish
 ModuleSchema.set('toJSON', { virtuals: true });
+
 module.exports = mongoose.model('Module', ModuleSchema);

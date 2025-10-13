@@ -1,4 +1,4 @@
-// models/Course.js - TO'G'RILANGAN
+// models/Course.js - YANGILANGAN
 const mongoose = require('mongoose');
 const slugify = require("slugify");
 
@@ -17,7 +17,15 @@ const CourseSchema = new mongoose.Schema({
   
   // O'qituvchi va tarkib
   teacher: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  modules: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Module' }], // ✅ MODULLAR QO'SHILDI
   lessons: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' }],
+  
+  // Narx
+  price: {
+    amount: { type: Number, default: 0 },
+    currency: { type: String, default: 'USD' },
+    isFree: { type: Boolean, default: true }
+  },
   
   // Daraja va talablar
   level: { 
@@ -50,10 +58,18 @@ const CourseSchema = new mongoose.Schema({
   isDeleted: { type: Boolean, default: false },
   isCompleted: { type: Boolean, default: false },
   
+  // Meta ma'lumotlar
+  tags: [String],
+  meta: {
+    keywords: [String],
+    language: { type: String, default: 'uz' }
+  },
+  
   // Sana
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
   publishedAt: Date,
-  updatedAt: { type: Date, default: Date.now }
+  deletedAt: Date
 });
 
 // Slug avtomatik generatsiya - TAKRORLANMAS
@@ -76,6 +92,24 @@ CourseSchema.pre("save", async function (next) {
   }
   next();
 });
+
+// Avtomatik updatedAt yangilash
+CourseSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Virtual maydonlar
+CourseSchema.virtual('moduleCount').get(function() {
+  return this.modules ? this.modules.length : 0;
+});
+
+CourseSchema.virtual('totalLessonCount').get(function() {
+  return this.lessons ? this.lessons.length : 0;
+});
+
+// JSON ga virtual maydonlarni qo'shish
+CourseSchema.set('toJSON', { virtuals: true });
 
 // Model yaratish
 const Course = mongoose.model('Course', CourseSchema);
