@@ -1,3 +1,4 @@
+// models/Lesson.js - YANGILANGAN
 const mongoose = require('mongoose');
 
 const OptionSchema = new mongoose.Schema({
@@ -37,13 +38,14 @@ const LessonSchema = new mongoose.Schema({
     required: true 
   },
   
-  // Modul va kurs bog'lanishlari
+  // Bog'lanishlar
   course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
   module: { type: mongoose.Schema.Types.ObjectId, ref: 'Module' },
   teacher: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   
   // Kontent maydonlari
   contentUrl: { type: String }, // Video, fayl yoki link
+  videoUrl: { type: String }, // Video URL (alohida field)
   textContent: { type: String }, // Matnli kontent
   thumbnail: { type: String }, // Dars uchun rasim
   attachments: [{
@@ -122,5 +124,17 @@ LessonSchema.pre('save', function(next) {
   }
   next();
 });
+
+// Virtual maydonlar
+LessonSchema.virtual('isVideo').get(function() {
+  return this.type === 'video';
+});
+
+LessonSchema.virtual('isQuiz').get(function() {
+  return this.type === 'quiz' || this.type === 'test';
+});
+
+// JSON ga virtual maydonlarni qo'shish
+LessonSchema.set('toJSON', { virtuals: true });
 
 module.exports = mongoose.model('Lesson', LessonSchema);

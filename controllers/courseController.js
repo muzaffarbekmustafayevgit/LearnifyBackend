@@ -52,6 +52,7 @@ exports.createCourse = [checkAuth, async (req, res) => {
 }];
 
 // ✅ Barcha kurslarni olish
+// ✅ Barcha kurslarni olish - FAQL PUBLISHED KURSLAR
 exports.getAllCourses = async (req, res) => {
   try {
     const { 
@@ -64,17 +65,19 @@ exports.getAllCourses = async (req, res) => {
       search,
       sortBy = 'createdAt',
       sortOrder = 'desc',
-      status = 'all'
+      status = 'published' // DEFAULT FAQL PUBLISHED
     } = req.query;
 
-    const query = { isDeleted: false };
+    const query = { 
+      isDeleted: false,
+      status: 'published' // HAR DOIM FAQL PUBLISHED KURSLAR
+    };
     
-    // Status filteri
-    if (status && status !== 'all') {
+    // Studentlar uchun faqat published kurslar ko'rsatiladi
+    // Agar admin/teacher bo'lsa, boshqa statuslarni ko'rsatish mumkin
+    const userRole = req.user?.role;
+    if ((userRole === 'admin' || userRole === 'teacher') && status && status !== 'all') {
       query.status = status;
-    } else {
-      // Agar status 'all' bo'lsa, barcha statusdagi kurslarni ko'rsatamiz
-      query.status = { $in: ['published', 'draft', 'pending'] };
     }
 
     // Filtrlash
@@ -97,6 +100,12 @@ exports.getAllCourses = async (req, res) => {
 
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    console.log('📊 Courses query:', {
+      query,
+      userRole,
+      requestedStatus: status
+    });
 
     // Database dan kurslarni olish
     const courses = await Course.find(query)
@@ -130,7 +139,6 @@ exports.getAllCourses = async (req, res) => {
     });
   }
 };
-
 // ✅ Mening kurslarim
 // controllers/courseController.js - TO'G'RILANGAN getMyCourses
 // controllers/courseController.js - TO'G'RILANGAN getMyCourses
@@ -234,6 +242,8 @@ exports.getMyCourses = async (req, res) => {
   }
 };
 // ✅ Kursni olish
+// ✅ Kursni olish
+// ✅ Kursni olish - YANGILANGAN
 exports.getCourse = async (req, res) => {
   try {
     const { id } = req.params;
@@ -250,18 +260,27 @@ exports.getCourse = async (req, res) => {
       });
     }
 
-    // FAQAT MAVJUD FIELD LARNI POPULATE QILAMIZ
+    // Kursni olish va modullarni populate qilish
     const course = await Course.findById(id)
       .populate('teacher', 'name avatar bio rating experienceYears')
-      .populate('lessons', 'title type duration order'); // Faqat lessons
+      .populate({
+        path: 'modules',
+        match: { isDeleted: false }, // Faqat o'chirilmagan modullar
+        options: { sort: { order: 1 } }, // Tartib bo'yicha saralash
+        populate: {
+          path: 'lessons',
+          match: { isDeleted: false, status: 'published' }, // Faqat published darslar
+          options: { sort: { order: 1 } } // Tartib bo'yicha saralash
+        }
+      });
 
     console.log('3. Found course:', course ? {
       id: course._id,
       title: course.title,
       status: course.status,
       teacher: course.teacher?._id,
-      isDeleted: course.isDeleted,
-      lessonsCount: course.lessons?.length
+      modulesCount: course.modules?.length,
+      isDeleted: course.isDeleted
     } : 'Course not found');
 
     if (!course || course.isDeleted) {
