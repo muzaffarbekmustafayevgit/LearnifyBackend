@@ -247,7 +247,8 @@ exports.login = async (req, res) => {
     // Refresh tokenni yangilash
     user.refreshToken = refreshToken;
     user.lastLogin = new Date();
-    await user.save();
+    user.save().catch(err => console.error("User save error:", err));
+
 
     res.json({
       success: true,
