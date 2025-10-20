@@ -4,8 +4,6 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const connectDB = require('./config/db');
-const listEndpoints = require('express-list-endpoints');
-const morgan = require('morgan');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
@@ -15,7 +13,6 @@ const swaggerUi = require('swagger-ui-express');
 
 // ---------- CORS sozlamalari ----------
 const corsOrigins = ["http://localhost:5173"];
-    
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -26,7 +23,7 @@ const corsOptions = {
     }
   },
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-  allowedHeaders: "Content-Type,Authorization,X-Requested-With,Accept,Origin,Cache-Control",
+  allowedHeaders: "Content-Type,Authorization,X-Requested-With,Accept,Origin,Cache-Control,Pragma",
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -43,7 +40,6 @@ if (!process.env.MONGO_URI) {
 connectDB(process.env.MONGO_URI);
 
 // ---------- Middlewares ----------
-app.use(morgan('dev'));
 app.use(helmet());
 app.use(mongoSanitize());
 app.use(xss());
@@ -75,23 +71,35 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // ---------- Routes ----------
-const routesDir = path.join(__dirname, 'routes');
+const routesDir = path.join(__dirname, 'Routes');
 if (fs.existsSync(routesDir)) {
-  fs.readdirSync(routesDir).forEach(file => {
-    if (!file.endsWith('.js')) return;
-    
-    const routePath = `./routes/${file}`;
-    try {
-      const route = require(routePath);
-      const routeName = file.replace('.js','').replace(/Routes$/i, '');
-      const prefix = `/api/${routeName}`;
-      
-      app.use(prefix, route);
-      console.log(`🔌 Route mounted: ${prefix} -> ${routePath}`);
-    } catch (err) {
-      console.error(`❌ Failed to load route ${routePath}:`, err.message);
-    }
-  });
+  console.log('📁 Routes papkasi topilmadi, qo\'lda route\'larni chaqiramiz...');
+  
+  // Auth routes
+  const authRoutes = require('./routes/authRoutes');
+  app.use('/api/auth', authRoutes);
+  
+  // User routes
+  const userRoutes = require('./routes/userRoutes');
+  app.use('/api/users', userRoutes);
+  
+  // Course routes
+  const courseRoutes = require('./routes/courseRoutes');
+  app.use('/api/courses', courseRoutes);
+  
+  // Module routes
+  const moduleRoutes = require('./routes/moduleRoutes');
+  app.use('/api/modules', moduleRoutes);
+
+  // Lesson routes
+  const lessonRoutes = require('./routes/lessonRoutes');
+  app.use('/api/lessons', lessonRoutes);
+  
+  // Progress routes
+  const progressRoutes = require('./routes/progressRoutes');
+  app.use('/api/progress', progressRoutes);
+  
+  console.log('✅ Barcha route\'lar qo\'lda muvaffaqiyatli yuklandi');
 }
 
 // ---------- Swagger ----------
@@ -173,17 +181,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({
     message: 'Ichki server xatoligi'
   });
-});
-
-// ---------- Process handlers ----------
-process.on('unhandledRejection', (err) => {
-  console.error('❌ Tutib olinmagan rad etilish:', err);
-  process.exit(1);
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('❌ Tutib olinmagan istisno:', err);
-  process.exit(1);
 });
 
 // ---------- Server start ----------
