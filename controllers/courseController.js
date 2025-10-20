@@ -4,7 +4,7 @@ const Module = require('../models/Module');
 const Lesson = require('../models/Lesson');
 const mongoose = require('mongoose');
 
-// ✅ Auth middleware tekshiruvi qo'shamiz
+// ✅ Auth middleware tekshiruvi
 const checkAuth = (req, res, next) => {
   if (!req.user || !req.user.id) {
     return res.status(401).json({
@@ -15,10 +15,65 @@ const checkAuth = (req, res, next) => {
   next();
 };
 
-// ✅ Kurs yaratish
-exports.createCourse = [checkAuth, async (req, res) => {
+// 👑 ADMIN: Barcha kurslarni olish (faqat admin)
+exports.getAllCoursesAdmin = async (req, res) => {
   try {
-    const { title, description, category, price } = req.body;
+    const { 
+      page = 1, 
+      limit = 10, 
+      status, 
+      category, 
+      teacher, 
+      search 
+    } = req.query;
+
+    // Filter qurish
+    const filter = { isDeleted: false };
+    
+    if (status) filter.status = status;
+    if (category) filter.category = category;
+    if (teacher && mongoose.Types.ObjectId.isValid(teacher)) {
+      filter.teacher = teacher;
+    }
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Kurslarni olish teacher ma'lumotlari bilan
+    const courses = await Course.find(filter)
+      .populate('teacher', 'name email avatar')
+      .populate('modules')
+      .populate('students', 'name email')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ createdAt: -1 });
+
+    const total = await Course.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      courses,
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
+      total
+    });
+  } catch (err) {
+    console.error('Admin courses error:', err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Kurslarni olishda xato', 
+      error: err.message 
+    });
+  }
+};
+
+// ✅ Kurs yaratish
+exports.createCourse = async (req, res) => {
+  try {
+    const { title, description, category, price, level, requirements, learningOutcomes } = req.body;
 
     // Validatsiya
     if (!title || !category) {
@@ -32,15 +87,22 @@ exports.createCourse = [checkAuth, async (req, res) => {
       title,
       description,
       category,
+      level: level || 'beginner',
+      requirements: requirements || [],
+      learningOutcomes: learningOutcomes || [],
       price: price || { amount: 0, currency: 'USD', isFree: true },
       teacher: req.user.id,
       status: 'draft'
     });
 
+    // Yangi kursni populate qilish
+    const populatedCourse = await Course.findById(newCourse._id)
+      .populate('teacher', 'name email avatar');
+
     res.status(201).json({
       success: true,
       message: 'Kurs muvaffaqiyatli yaratildi',
-      data: { course: newCourse }
+      data: { course: populatedCourse }
     });
   } catch (err) {
     console.error("Course create error:", err);
@@ -49,99 +111,9 @@ exports.createCourse = [checkAuth, async (req, res) => {
       message: "Server xatosi: " + err.message
     });
   }
-}];
-
-// ✅ Barcha kurslarni olish
-// ✅ Barcha kurslarni olish - FAQL PUBLISHED KURSLAR
-exports.getAllCourses = async (req, res) => {
-  try {
-    const { 
-      page = 1, 
-      limit = 12, 
-      category, 
-      level, 
-      minPrice, 
-      maxPrice, 
-      search,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-      status = 'published' // DEFAULT FAQL PUBLISHED
-    } = req.query;
-
-    const query = { 
-      isDeleted: false,
-      status: 'published' // HAR DOIM FAQL PUBLISHED KURSLAR
-    };
-    
-    // Studentlar uchun faqat published kurslar ko'rsatiladi
-    // Agar admin/teacher bo'lsa, boshqa statuslarni ko'rsatish mumkin
-    const userRole = req.user?.role;
-    if ((userRole === 'admin' || userRole === 'teacher') && status && status !== 'all') {
-      query.status = status;
-    }
-
-    // Filtrlash
-    if (category) query.category = category;
-    if (level && level !== 'all') query.level = level;
-    if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-        { shortDescription: { $regex: search, $options: 'i' } }
-      ];
-    }
-
-    // Narx filtri
-    if (minPrice || maxPrice) {
-      query['price.amount'] = {};
-      if (minPrice) query['price.amount'].$gte = parseFloat(minPrice);
-      if (maxPrice) query['price.amount'].$lte = parseFloat(maxPrice);
-    }
-
-    const sortOptions = {};
-    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
-
-    console.log('📊 Courses query:', {
-      query,
-      userRole,
-      requestedStatus: status
-    });
-
-    // Database dan kurslarni olish
-    const courses = await Course.find(query)
-      .populate('teacher', 'name avatar rating')
-      .populate('lessons')
-      .sort(sortOptions)
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const total = await Course.countDocuments(query);
-
-    res.json({
-      success: true,
-      data: {
-        courses,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / limit),
-          totalCourses: total,
-          hasNextPage: page < Math.ceil(total / limit),
-          hasPrevPage: page > 1
-        }
-      }
-    });
-
-  } catch (err) {
-    console.error('❌ Get courses error:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Kurslarni olishda xatolik'
-    });
-  }
 };
+
 // ✅ Mening kurslarim
-// controllers/courseController.js - TO'G'RILANGAN getMyCourses
-// controllers/courseController.js - TO'G'RILANGAN getMyCourses
 exports.getMyCourses = async (req, res) => {
   try {
     console.log('=== GET MY COURSES DEBUG ===');
@@ -157,22 +129,6 @@ exports.getMyCourses = async (req, res) => {
     }
 
     console.log('2. User ID:', req.user.id);
-    console.log('3. User ID type:', typeof req.user.id);
-
-    const mongoose = require('mongoose');
-    
-    // User ID ni ObjectId ga convert qilish
-    let teacherId;
-    try {
-      teacherId = new mongoose.Types.ObjectId(req.user.id);
-      console.log('4. Converted teacherId:', teacherId);
-    } catch (error) {
-      console.log('❌ ERROR: User ID ni ObjectId ga convert qilishda xato:', error);
-      return res.status(400).json({
-        success: false,
-        message: 'Noto‘g‘ri foydalanuvchi ID formati'
-      });
-    }
 
     const { 
       page = 1, 
@@ -180,11 +136,11 @@ exports.getMyCourses = async (req, res) => {
       status 
     } = req.query;
 
-    console.log('5. Query params:', { page, limit, status });
+    console.log('3. Query params:', { page, limit, status });
 
-    // Query ni yaratish - ObjectId bilan
+    // Query ni yaratish
     const query = { 
-      teacher: teacherId, // ObjectId ni ishlatamiz
+      teacher: req.user.id,
       isDeleted: false 
     };
     
@@ -193,27 +149,35 @@ exports.getMyCourses = async (req, res) => {
       query.status = status;
     }
 
-    console.log('6. Database query:', JSON.stringify(query));
+    console.log('4. Database query:', JSON.stringify(query));
 
     // Database so'rovi
     const courses = await Course.find(query)
       .populate('teacher', 'name avatar email')
-      .populate('lessons', 'title duration order')
+      .populate({
+        path: 'modules',
+        match: { isDeleted: false },
+        populate: {
+          path: 'lessons',
+          match: { isDeleted: false }
+        }
+      })
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
     const total = await Course.countDocuments(query);
 
-    console.log('7. Topilgan kurslar soni:', courses.length);
+    console.log('5. Topilgan kurslar soni:', courses.length);
     
     // Kurslarni tekshirish
     if (courses.length > 0) {
-      console.log('8. Birinchi kurs:', {
+      console.log('6. Birinchi kurs:', {
         id: courses[0]._id,
         title: courses[0].title,
         teacher: courses[0].teacher,
-        status: courses[0].status
+        status: courses[0].status,
+        modulesCount: courses[0].modules?.length
       });
     }
 
@@ -241,9 +205,53 @@ exports.getMyCourses = async (req, res) => {
     });
   }
 };
+
+// ✅ Barcha kurslarni olish - FAQL PUBLISHED KURSLAR
+exports.getAllCourses = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, category, level, search } = req.query;
+    
+    // Faqat published kurslarni ko'rsatish
+    const filter = { 
+      status: 'published',
+      isDeleted: false 
+    };
+    
+    if (category) filter.category = category;
+    if (level) filter.level = level;
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const courses = await Course.find(filter)
+      .populate('teacher', 'name email avatar')
+      .select('-modules -students -enrolledStudents')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ createdAt: -1 });
+
+    const total = await Course.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      courses,
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
+      total
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false, 
+      message: 'Kurslarni olishda xato', 
+      error: err.message 
+    });
+  }
+};
+
 // ✅ Kursni olish
-// ✅ Kursni olish
-// ✅ Kursni olish - YANGILANGAN
 exports.getCourse = async (req, res) => {
   try {
     const { id } = req.params;
@@ -261,16 +269,19 @@ exports.getCourse = async (req, res) => {
     }
 
     // Kursni olish va modullarni populate qilish
-    const course = await Course.findById(id)
+    const course = await Course.findOne({
+      _id: id,
+      isDeleted: false
+    })
       .populate('teacher', 'name avatar bio rating experienceYears')
       .populate({
         path: 'modules',
-        match: { isDeleted: false }, // Faqat o'chirilmagan modullar
-        options: { sort: { order: 1 } }, // Tartib bo'yicha saralash
+        match: { isDeleted: false },
+        options: { sort: { order: 1 } },
         populate: {
           path: 'lessons',
-          match: { isDeleted: false, status: 'published' }, // Faqat published darslar
-          options: { sort: { order: 1 } } // Tartib bo'yicha saralash
+          match: { isDeleted: false, status: 'published' },
+          options: { sort: { order: 1 } }
         }
       });
 
@@ -279,12 +290,11 @@ exports.getCourse = async (req, res) => {
       title: course.title,
       status: course.status,
       teacher: course.teacher?._id,
-      modulesCount: course.modules?.length,
-      isDeleted: course.isDeleted
+      modulesCount: course.modules?.length
     } : 'Course not found');
 
-    if (!course || course.isDeleted) {
-      console.log('❌ ERROR: Course not found or deleted');
+    if (!course) {
+      console.log('❌ ERROR: Course not found');
       return res.status(404).json({
         success: false,
         message: 'Kurs topilmadi'
@@ -326,7 +336,7 @@ exports.getCourse = async (req, res) => {
 };
 
 // ✅ Kursni yangilash
-exports.updateCourse = [checkAuth, async (req, res) => {
+exports.updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -392,15 +402,12 @@ exports.updateCourse = [checkAuth, async (req, res) => {
     console.error('Update course error:', err);
     res.status(500).json({
       success: false,
-      message: 'Kursni yangilashda xatolik'
+      message: 'Kursni yangilashda xatolik: ' + err.message
     });
   }
-}];
+};
 
 // ✅ Kursni nashr qilish
-// controllers/courseController.js - TO'G'RILANGAN VERSIYA
-
-// ✅ Kursni nashr qilish - TO'G'RILANGAN
 exports.publishCourse = async (req, res) => {
   try {
     const { id } = req.params;
@@ -408,7 +415,14 @@ exports.publishCourse = async (req, res) => {
     const course = await Course.findOne({
       _id: id,
       isDeleted: false
-    }).populate('lessons'); // Faqat mavjud fieldlarni populate qilamiz
+    }).populate({
+      path: 'modules',
+      match: { isDeleted: false },
+      populate: {
+        path: 'lessons',
+        match: { isDeleted: false, status: 'published' }
+      }
+    });
 
     if (!course) {
       return res.status(404).json({
@@ -426,7 +440,10 @@ exports.publishCourse = async (req, res) => {
     }
 
     // Kursni nashr qilish uchun minimal talablar
-    if (!course.lessons || course.lessons.length === 0) {
+    const totalLessons = course.modules?.reduce((acc, module) => 
+      acc + (module.lessons?.length || 0), 0) || 0;
+
+    if (totalLessons === 0) {
       return res.status(400).json({
         success: false,
         message: 'Kursda kamida bitta dars bo‘lishi kerak'
@@ -463,7 +480,7 @@ exports.publishCourse = async (req, res) => {
   }
 };
 
-// ✅ Tugallangan deb belgilash - TO'G'RILANGAN
+// ✅ Tugallangan deb belgilash
 exports.completeCourse = async (req, res) => {
   try {
     const { id } = req.params;
@@ -521,8 +538,9 @@ exports.completeCourse = async (req, res) => {
     });
   }
 };
-// ✅ DELETE kurs - TO'G'RILANGAN VERSIYA
-exports.deleteCourse = [checkAuth, async (req, res) => {
+
+// ✅ DELETE kurs
+exports.deleteCourse = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -579,16 +597,26 @@ exports.deleteCourse = [checkAuth, async (req, res) => {
       message: 'Kursni o‘chirishda xatolik: ' + err.message
     });
   }
-}];
-
+};
 
 // ✅ Kurs statistikasi
-exports.getCourseStats = [checkAuth, async (req, res) => {
+exports.getCourseStats = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const course = await Course.findById(id);
-    if (!course || course.isDeleted) {
+    const course = await Course.findOne({
+      _id: id,
+      isDeleted: false
+    }).populate({
+      path: 'modules',
+      match: { isDeleted: false },
+      populate: {
+        path: 'lessons',
+        match: { isDeleted: false }
+      }
+    });
+
+    if (!course) {
       return res.status(404).json({
         success: false,
         message: 'Kurs topilmadi'
@@ -604,12 +632,20 @@ exports.getCourseStats = [checkAuth, async (req, res) => {
     }
 
     // Statistik ma'lumotlar
+    const totalLessons = course.modules?.reduce((acc, module) => 
+      acc + (module.lessons?.length || 0), 0) || 0;
+    
+    const totalDuration = course.modules?.reduce((acc, module) => 
+      acc + module.lessons?.reduce((lessonAcc, lesson) => 
+        lessonAcc + (lesson.duration || 0), 0), 0) || 0;
+
     const stats = {
-      totalStudents: 0,
+      totalStudents: course.students?.length || 0,
       completionRate: 0,
       averageRating: course.rating?.average || 0,
-      totalLessons: course.lessons.length,
-      totalDuration: 0,
+      totalLessons,
+      totalDuration,
+      totalModules: course.modules?.length || 0,
       revenue: 0
     };
 
@@ -622,7 +658,9 @@ exports.getCourseStats = [checkAuth, async (req, res) => {
     console.error('Get course stats error:', err);
     res.status(500).json({
       success: false,
-      message: 'Statistikani olishda xatolik'
+      message: 'Statistikani olishda xatolik: ' + err.message
     });
   }
-}];
+};
+
+module.exports = exports;

@@ -1,4 +1,4 @@
-// models/Course.js - YANGILANGAN
+// models/Course.js - YANGILANGAN TO‘LIQ VARIANT
 const mongoose = require('mongoose');
 const slugify = require("slugify");
 
@@ -10,23 +10,29 @@ const CourseSchema = new mongoose.Schema({
   slug: { type: String, unique: true, lowercase: true },
   category: { type: String, required: true },
   subcategory: { type: String },
-  
+
   // Media
   thumbnail: { type: String },
   introVideo: { type: String },
-  
+
   // O'qituvchi va tarkib
   teacher: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  modules: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Module' }], // ✅ MODULLAR QO'SHILDI
+  modules: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Module' }],
   lessons: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Lesson' }],
-  
+
+  // 🧑‍🎓 Kursga yozilgan o‘quvchilar (Qo‘shildi)
+  students: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+
   // Narx
   price: {
     amount: { type: Number, default: 0 },
     currency: { type: String, default: 'USD' },
     isFree: { type: Boolean, default: true }
   },
-  
+
   // Daraja va talablar
   level: { 
     type: String, 
@@ -35,20 +41,20 @@ const CourseSchema = new mongoose.Schema({
   },
   learningOutcomes: [String],
   requirements: [String],
-  
+
   // Statistika
   enrollmentCount: { type: Number, default: 0 },
   rating: {
     average: { type: Number, default: 0, min: 0, max: 5 },
     count: { type: Number, default: 0 }
   },
-  
+
   // Davomiylik
   duration: {
     totalHours: { type: Number, default: 0 },
     totalLessons: { type: Number, default: 0 }
   },
-  
+
   // Holat
   status: { 
     type: String, 
@@ -57,14 +63,14 @@ const CourseSchema = new mongoose.Schema({
   },
   isDeleted: { type: Boolean, default: false },
   isCompleted: { type: Boolean, default: false },
-  
+
   // Meta ma'lumotlar
   tags: [String],
   meta: {
     keywords: [String],
     language: { type: String, default: 'uz' }
   },
-  
+
   // Sana
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
@@ -78,16 +84,14 @@ CourseSchema.pre("save", async function (next) {
     let baseSlug = slugify(this.title, { lower: true, strict: true });
     let slug = baseSlug;
     let counter = 1;
-    
-    // Takrorlanmas slug yaratish
+
     while (true) {
       const existingCourse = await mongoose.model('Course').findOne({ slug });
       if (!existingCourse) break;
-      
       slug = `${baseSlug}-${counter}`;
       counter++;
     }
-    
+
     this.slug = slug;
   }
   next();
@@ -113,5 +117,4 @@ CourseSchema.set('toJSON', { virtuals: true });
 
 // Model yaratish
 const Course = mongoose.model('Course', CourseSchema);
-
 module.exports = Course;

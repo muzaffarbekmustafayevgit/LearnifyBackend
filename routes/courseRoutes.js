@@ -1,3 +1,4 @@
+// routes/courseRoutes.js
 const express = require("express");
 const router = express.Router();
 const courseController = require("../controllers/courseController");
@@ -20,6 +21,9 @@ router.use(verifyToken);
 
 // 👤 Mening kurslarim (faqat teacher/admin)
 router.get("/my-courses", requireRole(["teacher", "admin"]), courseController.getMyCourses);
+
+// 👑 ADMIN: Barcha kurslarni olish (faqat admin)
+router.get("/admin/all-courses", requireRole(["admin"]), courseController.getAllCoursesAdmin);
 
 // ➕ Kurs yaratish (faqat teacher/admin)
 router.post("/", requireRole(["teacher", "admin"]), courseController.createCourse);
