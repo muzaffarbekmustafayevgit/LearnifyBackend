@@ -1,325 +1,161 @@
-  // controllers/lessonController.js
+const Lesson = require("../models/Lesson");
+const Progress = require("../models/Progress");
+const Certificate = require("../models/Certificate");
+const User = require("../models/User");
 
-  const Lesson = require("../models/Lesson");
-  const Progress = require("../models/Progress");
-  const Certificate = require("../models/Certificate");
-  const User = require("../models/User");
-
-  exports.submitTest = async (req, res) => {
-    try {
-      const { courseId, lessonId, answers } = req.body;
-      const studentId = req.user.id;
-
-      const lesson = await Lesson.findById(lessonId);
-      if (!lesson) return res.status(404).json({ message: "Dars topilmadi" });
-      if (!lesson.questions || lesson.questions.length === 0) {
-        return res.status(400).json({ message: "Bu test emas" });
-      }
-
-      // Javoblarni tekshirish
-      let correct = 0;
-      lesson.questions.forEach((q, idx) => {
-        if (answers[idx] !== undefined && answers[idx] === q.correctIndex) {
-          correct++;
-        }
-      });
-
-      const score = Math.round((correct / lesson.questions.length) * 100);
-
-      // Progress yangilash
-      let progress = await Progress.findOne({
-        student: studentId,
-        course: courseId,
-      });
-      if (!progress) {
-        progress = new Progress({
-          student: studentId,
-          course: courseId,
-          completedLessons: [],
-        });
-      }
-
-      // ✅ faqat 100% to‘g‘ri bo‘lsa lesson complete
-      if (score === 100 && !progress.completedLessons.includes(lessonId)) {
-        progress.completedLessons.push(lessonId);
-      }
-
-      // Progress % hisoblash
-      const totalLessons = await Lesson.countDocuments({ course: courseId });
-      progress.progress = Math.round(
-        (progress.completedLessons.length / totalLessons) * 100
-      );
-
-      // ✅ Sertifikat sharti
-      if (progress.progress >= 70) {
-        const certExists = await Certificate.findOne({
-          student: studentId,
-          course: courseId,
-        });
-        if (!certExists) {
-          await Certificate.create({
-            student: studentId,
-            course: courseId,
-            filePath: `certificates/${studentId}_${courseId}.pdf`,
-          });
-        }
-      }
-
-      // ✅ Gamification
-      const user = await User.findById(studentId);
-      if (score === 100) {
-        user.points += 20; // test tugatilsa ko‘proq ball
-      } else {
-        user.points += 5; // urinib ko‘rsa ham ball
-      }
-
-      // Kurs tugallanganda badge berish
-      if (progress.progress === 100) {
-        const badgeName = `Course Master – ${course.title}`;
-
-        if (!user.badges.includes(badgeName)) {
-          user.badges.push(badgeName); // ✅ Har kurs uchun alohida badge
-        }
-      }
-
-      if (user.points >= 200) user.rank = "Intermediate";
-      if (user.points >= 500) user.rank = "Pro";
-
-      await user.save();
-      await progress.save();
-
-      res.json({
-        score,
-        correct,
-        total: lesson.questions.length,
-        progress,
-      });
-    } catch (err) {
-      res
-        .status(500)
-        .json({ message: "Testni tekshirishda xatolik", error: err.message });
-    }
-  };
-
-  // ✅ Darsni oddiy tugallash (video/material/text uchun)
-  exports.completeLesson = async (req, res) => {
-    try {
-      const { courseId, lessonId } = req.body;
-      const studentId = req.user.id;
-
-      let progress = await Progress.findOne({
-        student: studentId,
-        course: courseId,
-      });
-      if (!progress) {
-        progress = new Progress({
-          student: studentId,
-          course: courseId,
-          completedLessons: [],
-        });
-      }
-
-      if (!progress.completedLessons.includes(lessonId)) {
-        progress.completedLessons.push(lessonId);
-      }
-
-      const totalLessons = await Lesson.countDocuments({ course: courseId });
-      progress.progress = Math.round(
-        (progress.completedLessons.length / totalLessons) * 100
-      );
-
-      // Gamification
-      const user = await User.findById(studentId);
-      user.points += 10; // oddiy lesson uchun
-      if (user.points >= 200) user.rank = "Intermediate";
-      if (user.points >= 500) user.rank = "Pro";
-      await user.save();
-
-      // Sertifikat
-      if (progress.progress >= 70) {
-        const certExists = await Certificate.findOne({
-          student: studentId,
-          course: courseId,
-        });
-        if (!certExists) {
-          await Certificate.create({
-            student: studentId,
-            course: courseId,
-            filePath: `certificates/${studentId}_${courseId}.pdf`,
-          });
-        }
-      }
-
-      await progress.save();
-      res.json(progress);
-    } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: "Progressni yangilashda xatolik",
-          error: error.message,
-        });
-    }
-  };
-  // Lesson yaratish
-// controllers/lessonController.js
-
-// ✅ Lesson yaratish
+// 🎬 Yangi video dars yaratish
 exports.createLesson = async (req, res) => {
   try {
-    const { title, content, courseId, moduleId, type, duration, order } = req.body;
-    
-    const lesson = new Lesson({ 
-      title, 
-      content, 
+    const { title, description, courseId, moduleId, videoUrl, duration, order, isFree } = req.body;
+
+    if (!title || !videoUrl || !courseId) {
+      return res.status(400).json({ success: false, message: "Majburiy maydonlar to‘ldirilmagan" });
+    }
+
+    const lesson = new Lesson({
+      title,
+      description,
       course: courseId,
       module: moduleId,
-      type: type || "video", // default value
+      videoUrl,
       duration: duration || 0,
       order: order || 0,
-      teacher: req.user.id // ✅ Teacher maydonini qo'shamiz
+      isFree: isFree || false,
+      teacher: req.user.id,
+      type: "video",
+      status: "published"
     });
-    
+
     await lesson.save();
-    
-    res.status(201).json({ 
+
+    res.status(201).json({
       success: true,
-      message: "Lesson yaratildi", 
-      lesson 
+      message: "Video dars muvaffaqiyatli yaratildi",
+      lesson
     });
   } catch (err) {
-    console.error("Lesson yaratish xatosi:", err);
-    res.status(500).json({ 
-      success: false,
-      message: err.message 
-    });
+    console.error("Dars yaratishda xatolik:", err);
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// ✅ Lesson yangilash
+// 📚 Kurs bo‘yicha barcha video darslarni olish
+exports.getLessonsByCourse = async (req, res) => {
+  try {
+    const lessons = await Lesson.find({ course: req.params.courseId, isDeleted: false }).sort({ order: 1 });
+    res.status(200).json({ success: true, data: lessons });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Darslarni olishda xatolik", error: err.message });
+  }
+};
+
+// 🎥 Bitta darsni olish
+exports.getLessonById = async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ success: false, message: "Dars topilmadi" });
+    res.status(200).json({ success: true, data: lesson });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Xatolik", error: err.message });
+  }
+};
+
+// ✏️ Video darsni yangilash
 exports.updateLesson = async (req, res) => {
   try {
-    const { title, content, type, duration, order, moduleId } = req.body;
-    
+    const { title, description, videoUrl, duration, order, isFree } = req.body;
     const lesson = await Lesson.findById(req.params.id);
-    if (!lesson) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Lesson topilmadi" 
-      });
+
+    if (!lesson) return res.status(404).json({ success: false, message: "Dars topilmadi" });
+
+    if (lesson.teacher.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Ruxsatingiz yo‘q" });
     }
 
-    // Faqat o'z darslarini yangilash mumkin
-    if (lesson.teacher.toString() !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ 
-        success: false,
-        message: "Sizga ruxsat yo'q" 
-      });
-    }
-
-    // Yangilash
     lesson.title = title || lesson.title;
-    lesson.content = content || lesson.content;
-    lesson.type = type || lesson.type;
+    lesson.description = description || lesson.description;
+    lesson.videoUrl = videoUrl || lesson.videoUrl;
     lesson.duration = duration || lesson.duration;
     lesson.order = order || lesson.order;
-    lesson.module = moduleId || lesson.module;
-    
-    await lesson.save();
+    lesson.isFree = isFree ?? lesson.isFree;
+    lesson.updatedAt = Date.now();
 
-    res.json({ 
-      success: true,
-      message: "Lesson yangilandi", 
-      lesson 
-    });
+    await lesson.save();
+    res.status(200).json({ success: true, message: "Video dars yangilandi", data: lesson });
   } catch (err) {
-    console.error("Lesson yangilash xatosi:", err);
-    res.status(500).json({ 
-      success: false,
-      message: err.message 
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
-  // Kurs bo‘yicha barcha darslar
-  exports.getLessonsByCourse = async (req, res) => {
-    try {
-      const lessons = await Lesson.find({ course: req.params.courseId });
-      res.json(lessons);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
+// 🗑️ Darsni o‘chirish
+exports.deleteLesson = async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ success: false, message: "Dars topilmadi" });
+
+    if (lesson.teacher.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Ruxsatingiz yo‘q" });
     }
-  };
 
-  // Bitta dars
-  exports.getLessonById = async (req, res) => {
-    try {
-      const lesson = await Lesson.findById(req.params.id);
-      if (!lesson) return res.status(404).json({ message: "Lesson topilmadi" });
-      res.json(lesson);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  };
+    lesson.isDeleted = true;
+    await lesson.save();
 
-  // Yangilash
+    res.status(200).json({ success: true, message: "Dars o‘chirildi" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Darsni o‘chirishda xatolik", error: err.message });
+  }
+};
 
-  // O‘chirish
-  exports.deleteLesson = async (req, res) => {
-    try {
-      const lesson = await Lesson.findByIdAndDelete(req.params.id);
-      if (!lesson) return res.status(404).json({ message: "Lesson topilmadi" });
-      res.json({ message: "O‘chirildi" });
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  };
-
-  // Testni qayta topshirish
-exports.retryQuiz = async (req, res) => {
+// ✅ Darsni tugallash (faqat video ko‘rish uchun)
+exports.completeLesson = async (req, res) => {
   try {
     const { courseId, lessonId } = req.body;
     const studentId = req.user.id;
 
-    // Progressdan oldingi test natijasini o'chirish
-    const progress = await Progress.findOne({
-      student: studentId,
-      course: courseId,
-    });
-
-    if (progress) {
-      // Lessonni completed ro'yxatidan o'chirish
-      progress.completedLessons = progress.completedLessons.filter(
-        id => id.toString() !== lessonId
-      );
-      await progress.save();
+    let progress = await Progress.findOne({ student: studentId, course: courseId });
+    if (!progress) {
+      progress = new Progress({ student: studentId, course: courseId, completedLessons: [] });
     }
 
-    res.json({ 
-      success: true, 
-      message: "Testni qayta topshirish uchun tayyor", 
-      lessonId 
-    });
-  } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      message: "Testni qayta topshirishda xatolik", 
-      error: err.message 
-    });
+    if (!progress.completedLessons.includes(lessonId)) {
+      progress.completedLessons.push(lessonId);
+    }
+
+    const totalLessons = await Lesson.countDocuments({ course: courseId, isDeleted: false });
+    progress.progress = Math.round((progress.completedLessons.length / totalLessons) * 100);
+
+    const user = await User.findById(studentId);
+    user.points += 10;
+
+    if (user.points >= 200) user.rank = "Intermediate";
+    if (user.points >= 500) user.rank = "Pro";
+
+    await user.save();
+
+    // Sertifikat
+    if (progress.progress >= 70) {
+      const certExists = await Certificate.findOne({ student: studentId, course: courseId });
+      if (!certExists) {
+        await Certificate.create({
+          student: studentId,
+          course: courseId,
+          filePath: `certificates/${studentId}_${courseId}.pdf`
+        });
+      }
+    }
+
+    await progress.save();
+    res.status(200).json({ success: true, progress });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Progressni yangilashda xatolik", error: error.message });
   }
 };
-
-
-  exports.getLessonsByCourse = async (req, res) => {
-    try {
-      const { courseId } = req.params;
-      const lessons = await Lesson.find({ course: courseId });
-
-      res.status(200).json({
-        success: true,
-        data: { lessons },
-      });
-    } catch (err) {
-      res.status(500).json({ success: false, message: "Darslarni olishda xatolik" });
-    }
-  };
+exports.getLessonsByModule = async (req, res) => {
+  try {
+    const { moduleId } = req.params;
+    const lessons = await Lesson.find({ module: moduleId });
+    res.status(200).json({ success: true, lessons });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
