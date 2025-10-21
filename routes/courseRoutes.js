@@ -44,6 +44,8 @@ router.patch("/:id/publish", requireRole(["teacher", "admin"]), courseController
 // ✅ Tugallangan deb belgilash (faqat teacher/admin)
 router.patch("/:id/complete", requireRole(["teacher", "admin"]), courseController.completeCourse);
 
+// 🚫 Nashrdan olish (faqat teacher/admin)  
+router.patch("/:id/unpublish", requireRole(["teacher", "admin"]), courseController.unpublishCourse);
 // ❗ Umumiy kurs olish (token talab qilmaydi, lekin kurs statusiga qarab cheklovlar)
 router.get("/:id", courseController.getCourse);
 
