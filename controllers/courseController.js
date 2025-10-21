@@ -407,11 +407,23 @@ exports.updateCourse = async (req, res) => {
   }
 };
 
-// ✅ Kursni nashr qilish
+// 📢 KURSNI NASHR QILISH
 exports.publishCourse = async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log('=== PUBLISH COURSE DEBUG ===');
+    console.log('1. Course ID:', id);
+    console.log('2. User:', req.user);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Noto‘g‘ri kurs ID si'
+      });
+    }
+
+    // Kursni olish modullar va darslar bilan
     const course = await Course.findOne({
       _id: id,
       isDeleted: false
@@ -420,11 +432,12 @@ exports.publishCourse = async (req, res) => {
       match: { isDeleted: false },
       populate: {
         path: 'lessons',
-        match: { isDeleted: false, status: 'published' }
+        match: { isDeleted: false }
       }
     });
 
     if (!course) {
+      console.log('❌ ERROR: Course not found');
       return res.status(404).json({
         success: false,
         message: 'Kurs topilmadi'
@@ -433,49 +446,166 @@ exports.publishCourse = async (req, res) => {
 
     // Faqat o'qituvchi yoki admin nashr qilishi mumkin
     if (course.teacher.toString() !== req.user.id && req.user.role !== 'admin') {
+      console.log('❌ ERROR: Not authorized to publish this course');
       return res.status(403).json({
         success: false,
         message: 'Sizda ushbu kursni nashr qilish huquqi yo‘q'
       });
     }
 
+    console.log('3. Course current status:', course.status);
+    console.log('4. Course modules count:', course.modules?.length);
+
     // Kursni nashr qilish uchun minimal talablar
     const totalLessons = course.modules?.reduce((acc, module) => 
       acc + (module.lessons?.length || 0), 0) || 0;
 
+    console.log('5. Total lessons:', totalLessons);
+
+    // 1. Kamida 1 ta modul bo'lishi kerak
+    if (!course.modules || course.modules.length === 0) {
+      console.log('❌ ERROR: No modules found');
+      return res.status(400).json({
+        success: false,
+        message: 'Kursda kamida bitta modul bo‘lishi kerak'
+      });
+    }
+
+    // 2. Kamida 1 ta dars bo'lishi kerak
     if (totalLessons === 0) {
+      console.log('❌ ERROR: No lessons found');
       return res.status(400).json({
         success: false,
         message: 'Kursda kamida bitta dars bo‘lishi kerak'
       });
     }
 
-    // Kurs ma'lumotlarini tekshirish
+    // 3. Har bir modulda kamida 1 ta dars bo'lishi kerak
+    const modulesWithoutLessons = course.modules.filter(module => 
+      !module.lessons || module.lessons.length === 0
+    );
+
+    if (modulesWithoutLessons.length > 0) {
+      console.log('❌ ERROR: Modules without lessons:', modulesWithoutLessons.length);
+      return res.status(400).json({
+        success: false,
+        message: `Quyidagi modullarda darslar mavjud emas: ${modulesWithoutLessons.map(m => m.title).join(', ')}`
+      });
+    }
+
+    // 4. Asosiy maydonlar to'ldirilganligini tekshirish
     const requiredFields = ['title', 'description', 'category'];
     const missingFields = requiredFields.filter(field => !course[field]);
     
     if (missingFields.length > 0) {
+      console.log('❌ ERROR: Missing required fields:', missingFields);
       return res.status(400).json({
         success: false,
         message: `Quyidagi maydonlar to'ldirilishi kerak: ${missingFields.join(', ')}`
       });
     }
 
+    // Kursni nashr qilish
     course.status = 'published';
     course.publishedAt = new Date();
     await course.save();
 
+    console.log('✅ SUCCESS: Course published successfully');
+
     res.json({
       success: true,
-      message: 'Kurs muvaffaqiyatli nashr qilindi',
-      data: { course }
+      message: 'Kurs muvaffaqiyatli nashr qilindi!',
+      data: { 
+        course: {
+          _id: course._id,
+          title: course.title,
+          status: course.status,
+          publishedAt: course.publishedAt
+        }
+      }
     });
 
   } catch (err) {
-    console.error('Publish course error:', err);
+    console.error('❌ Publish course error:', err);
     res.status(500).json({
       success: false,
       message: 'Kursni nashr qilishda xatolik: ' + err.message
+    });
+  }
+};
+
+// 🚫 KURSNI NASHRDAN OLISH
+exports.unpublishCourse = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log('=== UNPUBLISH COURSE DEBUG ===');
+    console.log('1. Course ID:', id);
+    console.log('2. User:', req.user);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Noto‘g‘ri kurs ID si'
+      });
+    }
+
+    const course = await Course.findOne({
+      _id: id,
+      isDeleted: false
+    });
+
+    if (!course) {
+      console.log('❌ ERROR: Course not found');
+      return res.status(404).json({
+        success: false,
+        message: 'Kurs topilmadi'
+      });
+    }
+
+    // Faqat o'qituvchi yoki admin nashrdan olishi mumkin
+    if (course.teacher.toString() !== req.user.id && req.user.role !== 'admin') {
+      console.log('❌ ERROR: Not authorized to unpublish this course');
+      return res.status(403).json({
+        success: false,
+        message: 'Sizda ushbu kursni nashrdan olish huquqi yo‘q'
+      });
+    }
+
+    console.log('3. Course current status:', course.status);
+
+    // Faqat published kursni nashrdan olish mumkin
+    if (course.status !== 'published') {
+      return res.status(400).json({
+        success: false,
+        message: 'Faqat nashr qilingan kursni nashrdan olish mumkin'
+      });
+    }
+
+    // Kursni nashrdan olish
+    course.status = 'draft';
+    course.publishedAt = null;
+    await course.save();
+
+    console.log('✅ SUCCESS: Course unpublished successfully');
+
+    res.json({
+      success: true,
+      message: 'Kurs nashrdan olindi',
+      data: { 
+        course: {
+          _id: course._id,
+          title: course.title,
+          status: course.status
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error('❌ Unpublish course error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Kursni nashrdan olishda xatolik: ' + err.message
     });
   }
 };
@@ -575,7 +705,7 @@ exports.deleteCourse = async (req, res) => {
     if (course.status === 'published') {
       return res.status(400).json({
         success: false,
-        message: 'Nashr qilingan kursni o‘chirib bo‘lmaydi. Avval arxivlang.'
+        message: 'Nashr qilingan kursni o‘chirib bo‘lmaydi. Avval nashrdan oling.'
       });
     }
 
