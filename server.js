@@ -72,36 +72,32 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // ---------- Routes ----------
 const routesDir = path.join(__dirname, 'Routes');
+
 if (fs.existsSync(routesDir)) {
-  console.log('📁 Routes papkasi topilmadi, qo\'lda route\'larni chaqiramiz...');
+  console.log('✅ Routes papkasi topildi. Avtomatik yuklanmoqda...');
   
-  // Auth routes
-  const authRoutes = require('./routes/authRoutes');
-  app.use('/api/auth', authRoutes);
-  
-  // User routes
-  const userRoutes = require('./routes/userRoutes');
-  app.use('/api/users', userRoutes);
-  
-  // Course routes
-  const courseRoutes = require('./routes/courseRoutes');
-  app.use('/api/courses', courseRoutes);
-  
-  // Module routes
-  const moduleRoutes = require('./routes/moduleRoutes');
-  app.use('/api/modules', moduleRoutes);
+  const routeFiles = fs.readdirSync(routesDir).filter(f => f.endsWith('.js'));
+  routeFiles.forEach(file => {
+    const route = require(path.join(routesDir, file));
+    const routeName = file.replace('Routes.js', '').toLowerCase();
+    const prefix = `/api/${routeName}s`;
+    app.use(prefix, route);
+    console.log(`→ Route: ${prefix}`);
+  });
+} else {
+  console.log('⚠️ Routes papkasi topilmadi. Qo‘lda routerlar chaqirilmoqda...');
 
-  // Lesson routes
-  const lessonRoutes = require('./routes/lessonRoutes');
-  app.use('/api/lessons', lessonRoutes);
-  
-  // Progress routes
-  const progressRoutes = require('./routes/progressRoutes');
-  app.use('/api/progress', progressRoutes);
-  
-  console.log('✅ Barcha route\'lar qo\'lda muvaffaqiyatli yuklandi');
+  app.use('/api/auth', require('./routes/authRoutes'));
+  app.use('/api/users', require('./routes/userRoutes'));
+  app.use('/api/courses', require('./routes/courseRoutes'));
+  app.use('/api/modules', require('./routes/moduleRoutes'));
+  app.use('/api/lessons', require('./routes/lessonRoutes'));
+  app.use('/api/enrollments', require('./routes/enrollmentRoutes'));
+  app.use('/api/progress', require('./routes/progressRoutes'));
+  app.use('/api/tests', require('./routes/testRoutes'));
+  app.use('/api/achievements', require('./routes/achievementRoutes'));
+  app.use('/api/certificates', require('./routes/certificateRoutes'));
 }
-
 // ---------- Swagger ----------
 const swaggerFilePath = path.join(__dirname, 'swagger-output.json');
 if (fs.existsSync(swaggerFilePath)) {

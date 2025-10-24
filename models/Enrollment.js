@@ -1,20 +1,22 @@
-// models/Enrollment.js
 const mongoose = require('mongoose');
 
 const enrollmentSchema = new mongoose.Schema({
   student: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: [true, 'Student ID kiritilishi shart']
   },
   course: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course',
-    required: true
+    required: [true, 'Course ID kiritilishi shart']
   },
   status: {
     type: String,
-    enum: ['active', 'completed', 'cancelled'],
+    enum: {
+      values: ['active', 'completed', 'cancelled'],
+      message: 'Status faqat: active, completed, cancelled bo\'lishi mumkin'
+    },
     default: 'active'
   },
   progress: {
@@ -25,8 +27,8 @@ const enrollmentSchema = new mongoose.Schema({
     completionPercentage: {
       type: Number,
       default: 0,
-      min: 0,
-      max: 100
+      min: [0, 'Progress 0% dan kam bo\'lmasligi kerak'],
+      max: [100, 'Progress 100% dan oshmasligi kerak']
     },
     lastAccessed: {
       type: Date,
@@ -39,6 +41,9 @@ const enrollmentSchema = new mongoose.Schema({
     completedLessonsCount: {
       type: Number,
       default: 0
+    },
+    lastLessonCompleted: {
+      type: Date
     }
   },
   enrolledAt: {
@@ -47,9 +52,14 @@ const enrollmentSchema = new mongoose.Schema({
   },
   completedAt: {
     type: Date
+  },
+  cancelledAt: {
+    type: Date
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
 // Compound index - bir student bir kursga faqat bir marta yozilishi mumkin
@@ -60,6 +70,7 @@ enrollmentSchema.methods.updateProgress = function(lessonId) {
   if (!this.progress.completedLessons.includes(lessonId)) {
     this.progress.completedLessons.push(lessonId);
     this.progress.completedLessonsCount = this.progress.completedLessons.length;
+    this.progress.lastLessonCompleted = new Date();
     
     if (this.progress.totalLessons > 0) {
       this.progress.completionPercentage = Math.round(
@@ -75,11 +86,13 @@ enrollmentSchema.methods.updateProgress = function(lessonId) {
       this.completedAt = new Date();
     }
   }
+  return this;
 };
 
 // Progressni qayta hisoblash
 enrollmentSchema.methods.recalculateProgress = async function() {
-  const totalLessons = await mongoose.model('Lesson').countDocuments({
+  const Lesson = mongoose.model('Lesson');
+  const totalLessons = await Lesson.countDocuments({
     course: this.course,
     isDeleted: false,
     status: 'published'
@@ -94,8 +107,22 @@ enrollmentSchema.methods.recalculateProgress = async function() {
     );
   }
   
-  await this.save();
+  // Statusni yangilash
+  if (this.progress.completionPercentage >= 95 && this.status !== 'completed') {
+    this.status = 'completed';
+    this.completedAt = new Date();
+  }
+  
+  return this.save();
 };
+
+// Enrollment davomiyligi
+enrollmentSchema.virtual('duration').get(function() {
+  if (this.completedAt) {
+    return this.completedAt - this.enrolledAt;
+  }
+  return Date.now() - this.enrolledAt;
+});
 
 // Virtual maydonlar
 enrollmentSchema.virtual('isCompleted').get(function() {
@@ -106,7 +133,53 @@ enrollmentSchema.virtual('isActive').get(function() {
   return this.status === 'active';
 });
 
-// JSON ga virtual maydonlarni qo'shish
-enrollmentSchema.set('toJSON', { virtuals: true });
+enrollmentSchema.virtual('isCancelled').get(function() {
+  return this.status === 'cancelled';
+});
+
+// Middleware - yangilangan vaqtni kuzatish
+enrollmentSchema.pre('save', function(next) {
+  if (this.isModified('status')) {
+    if (this.status === 'cancelled' && !this.cancelledAt) {
+      this.cancelledAt = new Date();
+    }
+    if (this.status === 'completed' && !this.completedAt) {
+      this.completedAt = new Date();
+    }
+  }
+  next();
+});
+
+// Statik metodlar
+enrollmentSchema.statics.getStudentEnrollments = function(studentId, options = {}) {
+  const { status, limit = 10, page = 1 } = options;
+  const query = { student: studentId };
+  
+  if (status) {
+    query.status = status;
+  }
+  
+  return this.find(query)
+    .populate('course', 'title thumbnail description level category')
+    .populate('student', 'name email')
+    .limit(limit)
+    .skip((page - 1) * limit)
+    .sort({ enrolledAt: -1 });
+};
+
+enrollmentSchema.statics.getCourseEnrollments = function(courseId, options = {}) {
+  const { status, limit = 20, page = 1 } = options;
+  const query = { course: courseId };
+  
+  if (status) {
+    query.status = status;
+  }
+  
+  return this.find(query)
+    .populate('student', 'name email avatar')
+    .limit(limit)
+    .skip((page - 1) * limit)
+    .sort({ enrolledAt: -1 });
+};
 
 module.exports = mongoose.model('Enrollment', enrollmentSchema);
