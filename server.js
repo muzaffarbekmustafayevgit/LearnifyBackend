@@ -86,17 +86,39 @@ if (fs.existsSync(routesDir)) {
   });
 } else {
   console.log('⚠️ Routes papkasi topilmadi. Qo‘lda routerlar chaqirilmoqda...');
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/courses', require('./routes/courseRoutes'));
+app.use('/api/modules', require('./routes/moduleRoutes'));
+app.use('/api/lessons', require('./routes/lessonRoutes'));
+app.use('/api/enrollments', require('./routes/enrollmentRoutes'));
+app.use('/api/progress', require('./routes/progressRoutes'));
+app.use('/api/tests', require('./routes/testRoutes'));
+app.use('/api/achievements', require('./routes/achievementRoutes'));
+app.use('/api/certificates', require('./routes/certificateRoutes'));
+}
 
-  app.use('/api/auth', require('./routes/authRoutes'));
-  app.use('/api/users', require('./routes/userRoutes'));
-  app.use('/api/courses', require('./routes/courseRoutes'));
-  app.use('/api/modules', require('./routes/moduleRoutes'));
-  app.use('/api/lessons', require('./routes/lessonRoutes'));
-  app.use('/api/enrollments', require('./routes/enrollmentRoutes'));
-  app.use('/api/progress', require('./routes/progressRoutes'));
-  app.use('/api/tests', require('./routes/testRoutes'));
-  app.use('/api/achievements', require('./routes/achievementRoutes'));
-  app.use('/api/certificates', require('./routes/certificateRoutes'));
+const driveRoutesPath = path.join(__dirname, 'routes', 'driveRoutes.js');
+console.log('🔍 Drive routes fayli:', driveRoutesPath);
+console.log('📄 Fayl mavjud:', fs.existsSync(driveRoutesPath));
+
+if (fs.existsSync(driveRoutesPath)) {
+  try {
+    const driveRoutes = require(driveRoutesPath);
+    app.use('/api/drive', driveRoutes);
+    console.log('✅ Drive routes muvaffaqiyatli qoʻshildi: /api/drive');
+  } catch (error) {
+    console.error('❌ Drive routes yuklanmadi:', error.message);
+    console.error('❌ Xato tafsilotlari:', error.stack);
+  }
+} else {
+  console.log('❌ Drive routes fayli topilmadi!');
+  console.log('📁 Mavjud fayllar:');
+  const routesDir = path.join(__dirname, 'routes');
+  if (fs.existsSync(routesDir)) {
+    const files = fs.readdirSync(routesDir);
+    files.forEach(file => console.log('   -', file));
+  }
 }
 // ---------- Swagger ----------
 const swaggerFilePath = path.join(__dirname, 'swagger-output.json');
