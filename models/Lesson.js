@@ -1,28 +1,30 @@
 const mongoose = require('mongoose');
 
 const LessonSchema = new mongoose.Schema({
-  // Asosiy ma’lumotlar
+  // Asosiy ma'lumotlar
   title: { type: String, required: true, trim: true },
   description: { type: String },
   type: { 
     type: String, 
-    enum: ['video'], // faqat video
+    enum: ['video', 'article', 'quiz'], // Turli xil dars turlari
     default: 'video',
     required: true 
   },
 
-  // Bog‘lanishlar
+  // Bog'lanishlar
   course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
   module: { type: mongoose.Schema.Types.ObjectId, ref: 'Module' },
   teacher: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
-  // Video kontent
-  videoUrl: { type: String, required: true }, // Asosiy video URL
+  // Video kontent - GOOGLE DRIVE INTEGRATSIYASI
+  videoUrl: { type: String }, // Google Drive URL
+  driveFileId: { type: String }, // Google Drive file ID
   thumbnail: { type: String }, // Video uchun rasm
   duration: { type: Number, default: 0 }, // daqiqalarda davomiylik
-  previewDuration: { type: Number, default: 0 }, // tekin preview uchun
+  fileSize: { type: Number }, // Fayl hajmi baytlarda
+  mimeType: { type: String }, // Fayl turi
 
-  // Qo‘shimcha ma’lumotlar
+  // Qo'shimcha ma'lumotlar
   order: { type: Number, default: 0 },
   lessonNumber: { type: String }, // masalan "1.1"
 
@@ -53,12 +55,5 @@ LessonSchema.pre('save', function (next) {
   }
   next();
 });
-
-// Virtual maydon
-LessonSchema.virtual('isVideo').get(function () {
-  return this.type === 'video';
-});
-
-LessonSchema.set('toJSON', { virtuals: true });
 
 module.exports = mongoose.model('Lesson', LessonSchema);
