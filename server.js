@@ -12,20 +12,44 @@ const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 
 // ---------- CORS sozlamalari ----------
-const corsOrigins = ["http://localhost:5173"];
+const corsOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000"
+];
 
 const corsOptions = {
-  origin: (origin, callback) => {
+  origin: function (origin, callback) {
+    // Development rejimida barcha origin larni ruxsat berish
+    if (process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+    
+    // Production da faqat ruxsat berilgan origin lar
     if (!origin || corsOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.log('❌ CORS bloklandi:', origin);
       callback(new Error(`CORS: ${origin} domaini ruxsat etilmagan`));
     }
   },
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-  allowedHeaders: "Content-Type,Authorization,X-Requested-With,Accept,Origin,Cache-Control,Pragma",
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization", 
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+    "Access-Control-Request-Method",
+    "Access-Control-Request-Headers",
+    "Cache-Control",
+    "Pragma"
+  ],
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  preflightContinue: false,
+  maxAge: 86400 // 24 soat
 };
 
 // ---------- App init ----------
@@ -40,12 +64,17 @@ if (!process.env.MONGO_URI) {
 connectDB(process.env.MONGO_URI);
 
 // ---------- Middlewares ----------
-app.use(helmet());
+app.use(cors(corsOptions));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(mongoSanitize());
 app.use(xss());
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Pre-flight requests uchun
+app.options('*', cors(corsOptions));
 
 // ---------- Rate limits ----------
 const generalLimiter = rateLimit({
