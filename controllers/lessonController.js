@@ -3,106 +3,78 @@ const Lesson = require("../models/Lesson");
 const Progress = require("../models/Progress");
 const Certificate = require("../models/Certificate");
 const User = require("../models/User");
-const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 
-// Google Drive sozlamalari
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
-);
-
-// Token yangilash funksiyasi
-const refreshAccessToken = async () => {
+// 🎬 Video faylni local saqlash funksiyasi
+const saveVideoLocally = async (file) => {
   try {
-    const { credentials } = await oauth2Client.refreshAccessToken();
-    oauth2Client.setCredentials(credentials);
-    console.log('✅ Google Drive token yangilandi');
-    return credentials;
+    console.log('📤 Video local fayl sifatida saqlanmoqda...');
+
+    // Asl fayl nomi va kengaytmasi
+    const originalName = path.parse(file.originalname).name;
+    const extension = path.extname(file.originalname);
+    
+    // Yangi fayl nomi
+    const fileName = `lesson_${Date.now()}_${originalName}${extension}`;
+    const filePath = path.join('uploads', 'videos', fileName);
+
+    // Videos papkasini yaratish agar mavjud bo'lmasa
+    const videosDir = path.join('uploads', 'videos');
+    if (!fs.existsSync(videosDir)) {
+      fs.mkdirSync(videosDir, { recursive: true });
+      console.log('✅ Videos papkasi yaratildi:', videosDir);
+    }
+
+    // Faylni nusxalash
+    fs.copyFileSync(file.path, filePath);
+    console.log('✅ Video local saqlandi:', fileName);
+
+    return {
+      fileName: fileName,
+      filePath: filePath,
+      url: `/uploads/videos/${fileName}`,
+      name: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size
+    };
+
   } catch (error) {
-    console.error('❌ Token yangilashda xatolik:', error);
-    throw error;
+    console.error('❌ Local fayl saqlash xatosi:', error);
+    throw new Error(`Faylni saqlashda xatolik: ${error.message}`);
   }
 };
 
-oauth2Client.setCredentials({ 
-  refresh_token: process.env.GOOGLE_REFRESH_TOKEN 
-});
-
-const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
-// 🎬 Video faylni Google Drive'ga yuklash funksiyasi
-const uploadToGoogleDrive = async (file, folderId = null) => {
+// 🗑️ Local faylni o'chirish
+const deleteLocalFile = async (filePath) => {
   try {
-    console.log('📤 Video Google Drive\'ga yuklanmoqda...');
+    if (!filePath) return;
 
-    const fileMetadata = {
-      name: `lesson_${Date.now()}_${file.originalname}`,
-      mimeType: file.mimetype,
-    };
-
-    // Agar folder ID berilgan bo'lsa
-    if (folderId) {
-      fileMetadata.parents = [folderId];
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log('🗑️ Local fayl o\'chirildi:', filePath);
     }
-
-    const media = {
-      mimeType: file.mimetype,
-      body: fs.createReadStream(file.path),
-    };
-
-    // Faylni Drive'ga yuklash
-    const driveResponse = await drive.files.create({
-      resource: fileMetadata,
-      media: media,
-      fields: 'id, name, webViewLink, webContentLink, mimeType, size',
-    });
-
-    // Umumiy ruxsat berish
-    await drive.permissions.create({
-      fileId: driveResponse.data.id,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone',
-      },
-    });
-
-    console.log('✅ Video Google Drive\'ga yuklandi:', driveResponse.data.id);
-
-    return {
-      fileId: driveResponse.data.id,
-      viewLink: `https://drive.google.com/file/d/${driveResponse.data.id}/view`,
-      downloadLink: driveResponse.data.webContentLink,
-      webViewLink: driveResponse.data.webViewLink,
-      name: driveResponse.data.name,
-      mimeType: driveResponse.data.mimeType,
-      size: driveResponse.data.size
-    };
-
+    
+    return true;
   } catch (error) {
-    console.error('❌ Google Drive yuklash xatosi:', error);
-    
-    // Agar authorization xatosi bo'lsa, token yangilash
-    if (error.code === 401) {
-      console.log('🔄 Token yangilanmoqda...');
-      await refreshAccessToken();
-      // Qayta urinib ko'rish
-      return uploadToGoogleDrive(file, folderId);
-    }
-    
-    throw error;
+    console.error('❌ Local faylni o\'chirishda xatolik:', error.message);
+    return false;
   }
 };
 
 // 🎬 Yangi video dars yaratish
 exports.createLesson = async (req, res) => {
+  let tempFileCleaned = false;
+  
   try {
     const { title, description, courseId, moduleId, videoUrl, duration, order, isFree } = req.body;
 
     console.log('📥 Dars yaratish so\'rovi:', { title, courseId, moduleId });
-    console.log('📁 Fayl ma\'lumotlari:', req.file ? req.file.originalname : 'Fayl yo\'q');
+    console.log('📁 Fayl ma\'lumotlari:', req.file ? {
+      originalname: req.file.originalname,
+      size: (req.file.size / (1024 * 1024)).toFixed(2) + ' MB',
+      mimetype: req.file.mimetype
+    } : 'Fayl yo\'q');
 
     // Validatsiya
     if (!title || !courseId) {
@@ -121,53 +93,105 @@ exports.createLesson = async (req, res) => {
       });
     }
 
-    let finalVideoUrl = videoUrl;
-    let driveFileId = null;
-    let fileSize = 0;
-    let mimeType = 'video/mp4';
+    // Video formatlari validatsiyasi
+    const allowedMimeTypes = [
+      'video/mp4', 'video/mkv', 'video/avi', 'video/mov', 'video/webm',
+      'video/x-msvideo', 'video/quicktime', 'video/x-matroska'
+    ];
+    
+    const maxFileSize = 500 * 1024 * 1024; // 500MB
 
-    // Agar video fayl yuklangan bo'lsa, Google Drive'ga yuklash
     if (req.file) {
-      try {
-        const driveResult = await uploadToGoogleDrive(req.file, process.env.GOOGLE_DRIVE_FOLDER_ID);
-        
-        finalVideoUrl = driveResult.viewLink;
-        driveFileId = driveResult.fileId;
-        fileSize = driveResult.size;
-        mimeType = driveResult.mimeType;
-
+      if (!allowedMimeTypes.includes(req.file.mimetype)) {
         // Vaqtinchalik faylni o'chirish
         fs.unlinkSync(req.file.path);
-        console.log('✅ Vaqtinchalik fayl o\'chirildi');
-
-      } catch (driveError) {
-        console.error('❌ Google Drive yuklash xatosi:', driveError);
+        tempFileCleaned = true;
         
-        // Agar fayl yuklangan bo'lsa, uni o'chirish
-        if (req.file && fs.existsSync(req.file.path)) {
-          fs.unlinkSync(req.file.path);
-        }
+        return res.status(400).json({
+          success: false,
+          message: "Faqat video fayllar qabul qilinadi (MP4, MKV, AVI, MOV, WEBM)",
+          allowedTypes: allowedMimeTypes,
+          receivedType: req.file.mimetype
+        });
+      }
+      
+      if (req.file.size > maxFileSize) {
+        // Vaqtinchalik faylni o'chirish
+        fs.unlinkSync(req.file.path);
+        tempFileCleaned = true;
         
-        return res.status(500).json({ 
-          success: false, 
-          message: "Video Google Drive'ga yuklashda xatolik",
-          error: driveError.message 
+        return res.status(400).json({
+          success: false,
+          message: "Video hajmi 500MB dan oshmasligi kerak",
+          maxSize: "500MB",
+          receivedSize: (req.file.size / (1024 * 1024)).toFixed(2) + " MB"
         });
       }
     }
 
+    let finalVideoUrl = videoUrl;
+    let localFilePath = null;
+    let fileName = null;
+    let fileSize = 0;
+    let mimeType = 'video/mp4';
+
+    // Agar video fayl yuklangan bo'lsa, local saqlash
+    if (req.file) {
+      try {
+        const localResult = await saveVideoLocally(req.file);
+        
+        finalVideoUrl = localResult.url;
+        localFilePath = localResult.filePath;
+        fileName = localResult.fileName;
+        fileSize = localResult.size;
+        mimeType = localResult.mimeType;
+
+        // Vaqtinchalik faylni o'chirish
+        fs.unlinkSync(req.file.path);
+        tempFileCleaned = true;
+        console.log('✅ Vaqtinchalik fayl o\'chirildi');
+
+      } catch (localError) {
+        console.error('❌ Local fayl saqlash xatosi:', localError);
+        
+        // Agar fayl yuklangan bo'lsa, uni o'chirish
+        if (req.file && fs.existsSync(req.file.path) && !tempFileCleaned) {
+          fs.unlinkSync(req.file.path);
+          tempFileCleaned = true;
+        }
+        
+        return res.status(500).json({ 
+          success: false, 
+          message: "Video faylni saqlashda xatolik",
+          error: localError.message 
+        });
+      }
+    }
+
+    // Order ni avtomatik hisoblash agar berilmagan bo'lsa
+    let finalOrder = order;
+    if (!finalOrder && finalOrder !== 0) {
+      const lastLesson = await Lesson.findOne({ 
+        course: courseId,
+        module: moduleId 
+      }).sort({ order: -1 });
+      
+      finalOrder = lastLesson ? lastLesson.order + 1 : 0;
+    }
+
     // Yangi dars yaratish
     const lesson = new Lesson({
-      title,
-      description: description || "",
+      title: title.trim(),
+      description: (description || "").trim(),
       course: courseId,
       module: moduleId,
       videoUrl: finalVideoUrl,
-      driveFileId: driveFileId,
+      localFilePath: localFilePath,
+      fileName: fileName,
       duration: duration || 0,
       fileSize: fileSize,
       mimeType: mimeType,
-      order: order || 0,
+      order: finalOrder,
       isFree: isFree || false,
       teacher: req.user.id,
       type: "video",
@@ -175,6 +199,11 @@ exports.createLesson = async (req, res) => {
     });
 
     await lesson.save();
+    
+    // Populate qilish
+    await lesson.populate('module', 'title order');
+    await lesson.populate('teacher', 'firstName lastName avatar');
+    await lesson.populate('course', 'title');
 
     console.log('✅ Dars yaratildi:', lesson._id);
 
@@ -185,27 +214,19 @@ exports.createLesson = async (req, res) => {
       data: lesson
     };
 
-    // Agar Drive'ga yuklangan bo'lsa, qo'shimcha ma'lumot qo'shish
-    if (driveFileId) {
-      responseData.driveInfo = {
-        fileId: driveFileId,
-        message: "Video Google Drive'ga muvaffaqiyatli yuklandi"
-      };
-    }
-
     res.status(201).json(responseData);
 
   } catch (err) {
     console.error("❌ Dars yaratishda xatolik:", err);
     
     // Agar fayl yuklangan bo'lsa va xatolik yuz bersa, uni o'chirish
-    if (req.file && fs.existsSync(req.file.path)) {
+    if (req.file && fs.existsSync(req.file.path) && !tempFileCleaned) {
       fs.unlinkSync(req.file.path);
     }
     
     res.status(500).json({ 
       success: false, 
-      message: err.message 
+      message: err.message || "Dars yaratishda xatolik"
     });
   }
 };
@@ -214,9 +235,13 @@ exports.createLesson = async (req, res) => {
 exports.getLessonsByCourse = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { page = 1, limit = 10, status, isFree } = req.query;
+    const { page = 1, limit = 10, status, isFree, sortBy = 'order', sortOrder = 'asc' } = req.query;
 
     console.log(`📚 Kurs darslari olinmoqda: ${courseId}`);
+
+    // Sort sozlamalari
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
     // Filter object
     const filter = { 
@@ -229,22 +254,37 @@ exports.getLessonsByCourse = async (req, res) => {
     if (isFree !== undefined) filter.isFree = isFree === 'true';
 
     const lessons = await Lesson.find(filter)
-      .sort({ order: 1, createdAt: -1 })
+      .sort(sortOptions)
       .populate('module', 'title order')
       .populate('teacher', 'firstName lastName avatar')
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .lean();
 
     const total = await Lesson.countDocuments(filter);
+
+    // Progress ma'lumotlarini qo'shish (agar student bo'lsa)
+    if (req.user.role === 'student') {
+      const progress = await Progress.findOne({
+        student: req.user.id,
+        course: courseId
+      });
+
+      if (progress) {
+        lessons.forEach(lesson => {
+          lesson.isCompleted = progress.completedLessons.includes(lesson._id.toString());
+        });
+      }
+    }
 
     res.status(200).json({ 
       success: true, 
       data: lessons,
       pagination: {
-        current: page,
+        current: parseInt(page),
         pages: Math.ceil(total / limit),
         total,
-        limit
+        limit: parseInt(limit)
       }
     });
   } catch (err) {
@@ -264,7 +304,10 @@ exports.getLessonById = async (req, res) => {
 
     console.log(`🎥 Dars ma'lumotlari olinmoqda: ${id}`);
 
-    const lesson = await Lesson.findById(id)
+    const lesson = await Lesson.findOne({
+      _id: id,
+      isDeleted: false
+    })
       .populate('module', 'title order')
       .populate('course', 'title description')
       .populate('teacher', 'firstName lastName avatar bio');
@@ -276,14 +319,37 @@ exports.getLessonById = async (req, res) => {
       });
     }
 
+    // Student uchun progress ma'lumotlari
+    let userProgress = null;
+    if (req.user.role === 'student') {
+      const progress = await Progress.findOne({
+        student: req.user.id,
+        course: lesson.course
+      });
+
+      if (progress) {
+        userProgress = {
+          isCompleted: progress.completedLessons.includes(lesson._id.toString()),
+          progressPercentage: progress.progress,
+          completedLessons: progress.completedLessons.length
+        };
+      }
+    }
+
     // Ko'rishlar sonini oshirish
     lesson.viewCount += 1;
     await lesson.save();
 
-    res.status(200).json({ 
+    const responseData = {
       success: true, 
-      data: lesson 
-    });
+      data: lesson
+    };
+
+    if (userProgress) {
+      responseData.userProgress = userProgress;
+    }
+
+    res.status(200).json(responseData);
   } catch (err) {
     console.error("❌ Dars ma'lumotlarini olishda xatolik:", err);
     res.status(500).json({ 
@@ -296,6 +362,8 @@ exports.getLessonById = async (req, res) => {
 
 // ✏️ Darsni yangilash
 exports.updateLesson = async (req, res) => {
+  let tempFileCleaned = false;
+  
   try {
     const { id } = req.params;
     const { title, description, videoUrl, duration, order, isFree, status } = req.body;
@@ -318,81 +386,116 @@ exports.updateLesson = async (req, res) => {
       });
     }
 
+    // Video formatlari validatsiyasi
+    const allowedMimeTypes = [
+      'video/mp4', 'video/mkv', 'video/avi', 'video/mov', 'video/webm',
+      'video/x-msvideo', 'video/quicktime', 'video/x-matroska'
+    ];
+    
+    const maxFileSize = 500 * 1024 * 1024; // 500MB
+
+    if (req.file) {
+      if (!allowedMimeTypes.includes(req.file.mimetype)) {
+        fs.unlinkSync(req.file.path);
+        tempFileCleaned = true;
+        
+        return res.status(400).json({
+          success: false,
+          message: "Faqat video fayllar qabul qilinadi (MP4, MKV, AVI, MOV, WEBM)"
+        });
+      }
+      
+      if (req.file.size > maxFileSize) {
+        fs.unlinkSync(req.file.path);
+        tempFileCleaned = true;
+        
+        return res.status(400).json({
+          success: false,
+          message: "Video hajmi 500MB dan oshmasligi kerak"
+        });
+      }
+    }
+
     let finalVideoUrl = videoUrl;
-    let newDriveFileId = null;
+    let newLocalFilePath = null;
+    let newFileName = null;
     let fileSize = lesson.fileSize;
     let mimeType = lesson.mimeType;
 
     // Agar yangi video fayl yuklangan bo'lsa
     if (req.file) {
       try {
-        // Eski videoni Drive'dan o'chirish
-        if (lesson.driveFileId) {
-          try {
-            await drive.files.delete({
-              fileId: lesson.driveFileId
-            });
-            console.log('🗑️ Eski video o\'chirildi:', lesson.driveFileId);
-          } catch (deleteError) {
-            console.error('❌ Eski videoni o\'chirishda xatolik:', deleteError.message);
-          }
+        // Eski videoni o'chirish
+        if (lesson.localFilePath) {
+          await deleteLocalFile(lesson.localFilePath);
         }
 
-        // Yangi videoni yuklash
-        const driveResult = await uploadToGoogleDrive(req.file, process.env.GOOGLE_DRIVE_FOLDER_ID);
+        // Yangi videoni saqlash
+        const localResult = await saveVideoLocally(req.file);
         
-        finalVideoUrl = driveResult.viewLink;
-        newDriveFileId = driveResult.fileId;
-        fileSize = driveResult.size;
-        mimeType = driveResult.mimeType;
+        finalVideoUrl = localResult.url;
+        newLocalFilePath = localResult.filePath;
+        newFileName = localResult.fileName;
+        fileSize = localResult.size;
+        mimeType = localResult.mimeType;
 
         fs.unlinkSync(req.file.path);
-        console.log('✅ Yangi video yuklandi:', driveResult.fileId);
+        tempFileCleaned = true;
+        console.log('✅ Yangi video saqlandi:', localResult.fileName);
 
-      } catch (driveError) {
-        console.error('❌ Yangi video yuklash xatosi:', driveError);
+      } catch (localError) {
+        console.error('❌ Yangi video saqlash xatosi:', localError);
         
-        if (req.file && fs.existsSync(req.file.path)) {
+        if (req.file && fs.existsSync(req.file.path) && !tempFileCleaned) {
           fs.unlinkSync(req.file.path);
+          tempFileCleaned = true;
         }
         
         return res.status(500).json({ 
           success: false, 
-          message: "Yangi videoni yuklashda xatolik",
-          error: driveError.message 
+          message: "Yangi videoni saqlashda xatolik",
+          error: localError.message 
         });
       }
     }
 
-    // Yangilash
-    lesson.title = title || lesson.title;
-    lesson.description = description || lesson.description;
-    
+    // Yangilash ma'lumotlari
+    const updateData = {
+      ...(title && { title: title.trim() }),
+      ...(description && { description: description.trim() }),
+      ...(duration !== undefined && { duration }),
+      ...(order !== undefined && { order }),
+      ...(isFree !== undefined && { isFree }),
+      ...(status && { status }),
+      updatedAt: Date.now()
+    };
+
     // Agar yangi video URL berilgan bo'lsa
     if (finalVideoUrl) {
-      lesson.videoUrl = finalVideoUrl;
-      lesson.driveFileId = newDriveFileId;
-      lesson.fileSize = fileSize;
-      lesson.mimeType = mimeType;
+      updateData.videoUrl = finalVideoUrl;
+      updateData.localFilePath = newLocalFilePath;
+      updateData.fileName = newFileName;
+      updateData.fileSize = fileSize;
+      updateData.mimeType = mimeType;
     }
-    
-    lesson.duration = duration || lesson.duration;
-    lesson.order = order || lesson.order;
-    lesson.isFree = isFree ?? lesson.isFree;
-    lesson.status = status || lesson.status;
-    lesson.updatedAt = Date.now();
 
-    await lesson.save();
+    const updatedLesson = await Lesson.findByIdAndUpdate(
+      id, 
+      updateData, 
+      { new: true, runValidators: true }
+    ).populate('module', 'title order')
+     .populate('teacher', 'firstName lastName avatar')
+     .populate('course', 'title');
     
     res.status(200).json({ 
       success: true, 
       message: "Video dars yangilandi", 
-      data: lesson 
+      data: updatedLesson 
     });
   } catch (err) {
     console.error("❌ Darsni yangilashda xatolik:", err);
     
-    if (req.file && fs.existsSync(req.file.path)) {
+    if (req.file && fs.existsSync(req.file.path) && !tempFileCleaned) {
       fs.unlinkSync(req.file.path);
     }
     
@@ -425,20 +528,15 @@ exports.deleteLesson = async (req, res) => {
       });
     }
 
-    // Agar Drive fayli bo'lsa, uni o'chirish
-    if (lesson.driveFileId) {
-      try {
-        await drive.files.delete({
-          fileId: lesson.driveFileId
-        });
-        console.log('🗑️ Google Drive fayli o\'chirildi:', lesson.driveFileId);
-      } catch (driveError) {
-        console.error('❌ Google Drive faylini o\'chirishda xatolik:', driveError.message);
-      }
+    // Agar local fayl bo'lsa, uni o'chirish
+    if (lesson.localFilePath) {
+      await deleteLocalFile(lesson.localFilePath);
     }
 
+    // Soft delete
     lesson.isDeleted = true;
     lesson.status = 'archived';
+    lesson.deletedAt = new Date();
     await lesson.save();
 
     res.status(200).json({ 
@@ -464,15 +562,24 @@ exports.completeLesson = async (req, res) => {
     console.log(`✅ Dars tugallanmoqda: ${lessonId}, Student: ${studentId}`);
 
     // Dars mavjudligini tekshirish
-    const lesson = await Lesson.findById(lessonId);
+    const lesson = await Lesson.findOne({
+      _id: lessonId,
+      isDeleted: false,
+      status: 'published'
+    });
+    
     if (!lesson) {
       return res.status(404).json({ 
         success: false, 
-        message: "Dars topilmadi" 
+        message: "Dars topilmadi yoki mavjud emas" 
       });
     }
 
-    let progress = await Progress.findOne({ student: studentId, course: courseId });
+    let progress = await Progress.findOne({ 
+      student: studentId, 
+      course: courseId 
+    });
+    
     if (!progress) {
       progress = new Progress({ 
         student: studentId, 
@@ -481,13 +588,20 @@ exports.completeLesson = async (req, res) => {
       });
     }
 
+    let pointsAdded = 0;
+    let isNewCompletion = false;
+
     // Agar dars avval tugallanmagan bo'lsa
     if (!progress.completedLessons.includes(lessonId)) {
       progress.completedLessons.push(lessonId);
+      isNewCompletion = true;
       
       // Dars tugallanganlar sonini oshirish
       lesson.completionCount += 1;
       await lesson.save();
+
+      // Ball qo'shish
+      pointsAdded = 10;
     }
 
     // Progressni hisoblash
@@ -497,24 +611,37 @@ exports.completeLesson = async (req, res) => {
       status: 'published'
     });
     
-    progress.progress = Math.round((progress.completedLessons.length / totalLessons) * 100);
+    progress.progress = totalLessons > 0 ? 
+      Math.round((progress.completedLessons.length / totalLessons) * 100) : 0;
 
-    // User ballarini oshirish
-    const user = await User.findById(studentId);
-    user.points += 10;
+    let user = null;
+    // Faqat yangi tugallangan bo'lsa ball qo'shish
+    if (isNewCompletion && pointsAdded > 0) {
+      user = await User.findById(studentId);
+      if (user) {
+        user.points += pointsAdded;
 
-    // Rank yangilash
-    if (user.points >= 200) user.rank = "Intermediate";
-    if (user.points >= 500) user.rank = "Pro";
+        // Rank yangilash
+        if (user.points >= 500) {
+          user.rank = "Pro";
+        } else if (user.points >= 200) {
+          user.rank = "Intermediate";
+        } else if (user.points >= 50) {
+          user.rank = "Beginner";
+        }
 
-    await user.save();
+        await user.save();
+      }
+    }
 
     // Sertifikat tekshirish (70% progress)
+    let certificateCreated = false;
     if (progress.progress >= 70) {
       const certExists = await Certificate.findOne({ 
         student: studentId, 
         course: courseId 
       });
+      
       if (!certExists) {
         await Certificate.create({
           student: studentId,
@@ -522,21 +649,35 @@ exports.completeLesson = async (req, res) => {
           filePath: `certificates/${studentId}_${courseId}.pdf`,
           issuedAt: new Date()
         });
+        certificateCreated = true;
         console.log('📜 Sertifikat yaratildi:', { studentId, courseId });
       }
     }
 
     await progress.save();
 
-    res.status(200).json({ 
+    const responseData = { 
       success: true, 
-      message: "Dars muvaffaqiyatli tugallandi",
+      message: isNewCompletion ? "Dars muvaffaqiyatli tugallandi" : "Dars avval tugallangan",
       data: {
         progress,
-        pointsAdded: 10,
-        newRank: user.rank
+        isNewCompletion,
+        completionRate: progress.progress,
+        totalLessons,
+        completedLessons: progress.completedLessons.length
       }
-    });
+    };
+
+    // Faqat yangi tugallangan bo'lsa rewards qo'shish
+    if (isNewCompletion) {
+      responseData.data.rewards = {
+        pointsAdded,
+        newRank: user?.rank,
+        certificateCreated
+      };
+    }
+
+    res.status(200).json(responseData);
   } catch (error) {
     console.error("❌ Darsni tugallashda xatolik:", error);
     res.status(500).json({ 
@@ -551,34 +692,35 @@ exports.completeLesson = async (req, res) => {
 exports.getLessonsByModule = async (req, res) => {
   try {
     const { moduleId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, status = 'published' } = req.query;
 
     console.log(`📂 Modul darslari olinmoqda: ${moduleId}`);
 
-    const lessons = await Lesson.find({ 
+    const filter = { 
       module: moduleId,
-      isDeleted: false,
-      status: 'published'
-    })
-    .sort({ order: 1, createdAt: -1 })
-    .populate('teacher', 'firstName lastName avatar')
-    .limit(limit * 1)
-    .skip((page - 1) * limit);
+      isDeleted: false
+    };
 
-    const total = await Lesson.countDocuments({ 
-      module: moduleId, 
-      isDeleted: false,
-      status: 'published'
-    });
+    if (status) filter.status = status;
+
+    const lessons = await Lesson.find(filter)
+      .sort({ order: 1, createdAt: -1 })
+      .populate('teacher', 'firstName lastName avatar')
+      .populate('course', 'title')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const total = await Lesson.countDocuments(filter);
 
     res.status(200).json({ 
       success: true, 
       data: lessons,
       pagination: {
-        current: page,
+        current: parseInt(page),
         pages: Math.ceil(total / limit),
         total,
-        limit
+        limit: parseInt(limit)
       }
     });
   } catch (error) {
@@ -590,18 +732,24 @@ exports.getLessonsByModule = async (req, res) => {
   }
 };
 
-// 🔍 Darslarni qidirish
+// 🔍 Darslarni qidirush
 exports.searchLessons = async (req, res) => {
   try {
-    const { q, courseId, moduleId, status, isFree } = req.query;
-    const { page = 1, limit = 10 } = req.query;
+    const { q, courseId, moduleId, status, isFree, teacherId } = req.query;
+    const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
 
     console.log(`🔍 Darslar qidirilmoqda: ${q}`);
 
     const filter = { 
-      isDeleted: false,
-      status: 'published'
+      isDeleted: false
     };
+
+    // Status filter
+    if (status) {
+      filter.status = status;
+    } else {
+      filter.status = 'published'; // Default holat
+    }
 
     // Qidiruv so'zi
     if (q) {
@@ -614,15 +762,21 @@ exports.searchLessons = async (req, res) => {
     // Qo'shimcha filtrlarni qo'shish
     if (courseId) filter.course = courseId;
     if (moduleId) filter.module = moduleId;
+    if (teacherId) filter.teacher = teacherId;
     if (isFree !== undefined) filter.isFree = isFree === 'true';
 
+    // Sort sozlamalari
+    const sortOptions = {};
+    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
     const lessons = await Lesson.find(filter)
-      .sort({ createdAt: -1 })
+      .sort(sortOptions)
       .populate('course', 'title')
       .populate('module', 'title')
-      .populate('teacher', 'firstName lastName')
+      .populate('teacher', 'firstName lastName avatar')
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .lean();
 
     const total = await Lesson.countDocuments(filter);
 
@@ -630,10 +784,10 @@ exports.searchLessons = async (req, res) => {
       success: true, 
       data: lessons,
       pagination: {
-        current: page,
+        current: parseInt(page),
         pages: Math.ceil(total / limit),
         total,
-        limit
+        limit: parseInt(limit)
       }
     });
   } catch (error) {
@@ -665,17 +819,47 @@ exports.getLessonStats = async (req, res) => {
     });
 
     // Kursdagi barcha studentlar soni
-    const totalStudents = await Progress.countDocuments({
+    const totalStudents = await Progress.distinct('student', {
       course: lesson.course
     });
 
+    const totalStudentsCount = totalStudents.length;
+
+    // O'rtacha progress
+    const averageProgress = await Progress.aggregate([
+      {
+        $match: {
+          course: lesson.course._id
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          averageProgress: { $avg: '$progress' }
+        }
+      }
+    ]);
+
     const stats = {
-      viewCount: lesson.viewCount,
-      completionCount: lesson.completionCount,
-      completionRate: totalStudents > 0 ? (completionCount / totalStudents * 100).toFixed(2) : 0,
-      averageRating: 0, // Agar rating tizimi bo'lsa
-      totalStudents,
-      studentsCompleted: completionCount
+      basic: {
+        viewCount: lesson.viewCount,
+        completionCount: lesson.completionCount,
+        duration: lesson.duration,
+        fileSize: lesson.fileSize,
+        createdAt: lesson.createdAt
+      },
+      completion: {
+        studentsCompleted: completionCount,
+        totalStudents: totalStudentsCount,
+        completionRate: totalStudentsCount > 0 ? 
+          ((completionCount / totalStudentsCount) * 100).toFixed(2) + '%' : '0%',
+        averageCourseProgress: averageProgress[0] ? 
+          Math.round(averageProgress[0].averageProgress) + '%' : '0%'
+      },
+      popularity: {
+        level: lesson.viewCount > 100 ? 'High' : lesson.viewCount > 50 ? 'Medium' : 'Low',
+        score: lesson.viewCount + (completionCount * 2)
+      }
     };
 
     res.status(200).json({ 
@@ -688,6 +872,238 @@ exports.getLessonStats = async (req, res) => {
       success: false, 
       message: "Statistikani olishda xatolik", 
       error: error.message 
+    });
+  }
+};
+
+// 🔄 Darsni qayta faollashtirish
+exports.restoreLesson = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`🔄 Dars qayta faollashtirilmoqda: ${id}`);
+
+    const lesson = await Lesson.findById(id);
+    if (!lesson) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Dars topilmadi" 
+      });
+    }
+
+    if (lesson.teacher.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Ruxsatingiz yo'q" 
+      });
+    }
+
+    lesson.isDeleted = false;
+    lesson.status = 'published';
+    lesson.deletedAt = null;
+    await lesson.save();
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Dars qayta faollashtirildi",
+      data: lesson
+    });
+  } catch (error) {
+    console.error("❌ Darsni qayta faollashtirishda xatolik:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Darsni qayta faollashtirishda xatolik", 
+      error: error.message 
+    });
+  }
+};
+
+// 📈 O'qituvchi darslari statistikasi
+exports.getTeacherLessonStats = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+
+    const stats = await Lesson.aggregate([
+      {
+        $match: {
+          teacher: teacherId,
+          isDeleted: false
+        }
+      },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          totalViews: { $sum: '$viewCount' },
+          totalCompletions: { $sum: '$completionCount' },
+          averageDuration: { $avg: '$duration' }
+        }
+      }
+    ]);
+
+    const totalLessons = await Lesson.countDocuments({
+      teacher: teacherId,
+      isDeleted: false
+    });
+
+    const totalViews = await Lesson.aggregate([
+      {
+        $match: {
+          teacher: teacherId,
+          isDeleted: false
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$viewCount' }
+        }
+      }
+    ]);
+
+    // Popular darslar
+    const popularLessons = await Lesson.find({
+      teacher: teacherId,
+      isDeleted: false
+    })
+      .sort({ viewCount: -1 })
+      .limit(5)
+      .select('title viewCount completionCount')
+      .lean();
+
+    res.status(200).json({ 
+      success: true, 
+      data: {
+        summary: {
+          totalLessons,
+          totalViews: totalViews[0]?.total || 0,
+          popularLessons
+        },
+        byStatus: stats
+      }
+    });
+  } catch (error) {
+    console.error("❌ O'qituvchi statistikasini olishda xatolik:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Statistikani olishda xatolik", 
+      error: error.message 
+    });
+  }
+};
+
+// 🎯 Darsni ko'rib chiqish (preview)
+exports.previewLesson = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const lesson = await Lesson.findOne({
+      _id: id,
+      isDeleted: false,
+      status: 'published'
+    }).select('title description videoUrl duration teacher course')
+      .populate('teacher', 'firstName lastName avatar')
+      .populate('course', 'title');
+
+    if (!lesson) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Dars topilmadi" 
+      });
+    }
+
+    // Faqat ma'lumotlarni ko'rsatish, progress o'zgartirmaslik
+    res.status(200).json({ 
+      success: true, 
+      data: lesson 
+    });
+  } catch (error) {
+    console.error("❌ Darsni ko'rib chiqishda xatolik:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Darsni ko'rib chiqishda xatolik", 
+      error: error.message 
+    });
+  }
+};
+
+exports.uploadVideoOnly = async (req, res) => {
+  let tempFileCleaned = false;
+  
+  try {
+    console.log('📤 Faqat video yuklanmoqda...');
+
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Video fayli yuklanmadi" 
+      });
+    }
+
+    // Video formatlari validatsiyasi
+    const allowedMimeTypes = [
+      'video/mp4', 'video/mkv', 'video/avi', 'video/mov', 'video/webm',
+      'video/x-msvideo', 'video/quicktime', 'video/x-matroska'
+    ];
+    
+    const maxFileSize = 500 * 1024 * 1024; // 500MB
+
+    if (!allowedMimeTypes.includes(req.file.mimetype)) {
+      fs.unlinkSync(req.file.path);
+      tempFileCleaned = true;
+      
+      return res.status(400).json({
+        success: false,
+        message: "Faqat video fayllar qabul qilinadi (MP4, MKV, AVI, MOV, WEBM)",
+        allowedTypes: allowedMimeTypes,
+        receivedType: req.file.mimetype
+      });
+    }
+    
+    if (req.file.size > maxFileSize) {
+      fs.unlinkSync(req.file.path);
+      tempFileCleaned = true;
+      
+      return res.status(400).json({
+        success: false,
+        message: "Video hajmi 500MB dan oshmasligi kerak",
+        maxSize: "500MB",
+        receivedSize: (req.file.size / (1024 * 1024)).toFixed(2) + " MB"
+      });
+    }
+
+    // Video ni local saqlash
+    const localResult = await saveVideoLocally(req.file);
+    
+    // Vaqtinchalik faylni o'chirish
+    fs.unlinkSync(req.file.path);
+    tempFileCleaned = true;
+
+    console.log('✅ Video muvaffaqiyatli yuklandi:', localResult.fileName);
+
+    // Response
+    res.status(201).json({
+      success: true,
+      message: "Video muvaffaqiyatli yuklandi",
+      data: {
+        videoUrl: localResult.url,
+        fileName: localResult.fileName,
+        fileSize: localResult.size,
+        mimeType: localResult.mimeType
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ Video yuklashda xatolik:", err);
+    
+    // Agar fayl yuklangan bo'lsa va xatolik yuz bersa, uni o'chirish
+    if (req.file && fs.existsSync(req.file.path) && !tempFileCleaned) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: err.message || "Video yuklashda xatolik"
     });
   }
 };

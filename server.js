@@ -95,9 +95,6 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth', authLimiter);
 
-// ---------- Static directories ----------
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // ---------- Routes ----------
 const routesDir = path.join(__dirname, 'Routes');
