@@ -75,7 +75,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Pre-flight requests uchun
 app.options('*', cors(corsOptions));
-
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // ---------- Rate limits ----------
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

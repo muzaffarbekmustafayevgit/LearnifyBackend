@@ -6,44 +6,58 @@ const User = require("../models/User");
 const fs = require('fs');
 const path = require('path');
 
+
+const ensureUploadsDir = () => {
+  const uploadsDir = path.join(__dirname, '..', 'uploads');
+  const videosDir = path.join(uploadsDir, 'videos');
+  
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('✅ Uploads papkasi yaratildi:', uploadsDir);
+  }
+  
+  if (!fs.existsSync(videosDir)) {
+    fs.mkdirSync(videosDir, { recursive: true });
+    console.log('✅ Videos papkasi yaratildi:', videosDir);
+  }
+  
+  return videosDir;
+};
+
 // 🎬 Video faylni local saqlash funksiyasi
 const saveVideoLocally = async (file) => {
-  try {
-    console.log('📤 Video local fayl sifatida saqlanmoqda...');
-
-    // Asl fayl nomi va kengaytmasi
-    const originalName = path.parse(file.originalname).name;
-    const extension = path.extname(file.originalname);
-    
-    // Yangi fayl nomi
-    const fileName = `lesson_${Date.now()}_${originalName}${extension}`;
-    const filePath = path.join('uploads', 'videos', fileName);
-
-    // Videos papkasini yaratish agar mavjud bo'lmasa
-    const videosDir = path.join('uploads', 'videos');
-    if (!fs.existsSync(videosDir)) {
-      fs.mkdirSync(videosDir, { recursive: true });
-      console.log('✅ Videos papkasi yaratildi:', videosDir);
-    }
-
-    // Faylni nusxalash
-    fs.copyFileSync(file.path, filePath);
-    console.log('✅ Video local saqlandi:', fileName);
-
-    return {
-      fileName: fileName,
-      filePath: filePath,
-      url: `/uploads/videos/${fileName}`,
-      name: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size
-    };
-
-  } catch (error) {
-    console.error('❌ Local fayl saqlash xatosi:', error);
-    throw new Error(`Faylni saqlashda xatolik: ${error.message}`);
+  if (!file) {
+    throw new Error("Fayl uzatilmadi (file undefined)");
   }
+
+  console.log('📤 Video local fayl sifatida saqlanmoqda...');
+
+  const videosDir = ensureUploadsDir();
+
+  const originalName = path.parse(file.originalname).name;
+  const extension = path.extname(file.originalname);
+
+  const safeName = originalName
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '_')
+    .toLowerCase();
+
+  const fileName = `lesson_${Date.now()}_${safeName}${extension}`;
+  const filePath = path.join(videosDir, fileName);
+
+  fs.copyFileSync(file.path, filePath);
+
+  return {
+    fileName,
+    filePath,
+    url: `/uploads/videos/${fileName}`,
+    name: file.originalname,
+    mimeType: file.mimetype,
+    size: file.size
+  };
 };
+
+
 
 // 🗑️ Local faylni o'chirish
 const deleteLocalFile = async (filePath) => {
@@ -57,7 +71,7 @@ const deleteLocalFile = async (filePath) => {
     
     return true;
   } catch (error) {
-    console.error('❌ Local faylni o\'chirishda xatolik:', error.message);
+    console.error('❌ Local faylni ochirishda xatolik:', error.message);
     return false;
   }
 };
@@ -99,7 +113,7 @@ exports.createLesson = async (req, res) => {
       'video/x-msvideo', 'video/quicktime', 'video/x-matroska'
     ];
     
-    const maxFileSize = 500 * 1024 * 1024; // 500MB
+    const maxFileSize = 75 * 1024 * 1024; // 75MB - Sizning talabingiz
 
     if (req.file) {
       if (!allowedMimeTypes.includes(req.file.mimetype)) {
@@ -122,8 +136,8 @@ exports.createLesson = async (req, res) => {
         
         return res.status(400).json({
           success: false,
-          message: "Video hajmi 500MB dan oshmasligi kerak",
-          maxSize: "500MB",
+          message: "Video hajmi 75MB dan oshmasligi kerak",
+          maxSize: "75MB",
           receivedSize: (req.file.size / (1024 * 1024)).toFixed(2) + " MB"
         });
       }
@@ -134,6 +148,7 @@ exports.createLesson = async (req, res) => {
     let fileName = null;
     let fileSize = 0;
     let mimeType = 'video/mp4';
+    let publicUrl = null;
 
     // Agar video fayl yuklangan bo'lsa, local saqlash
     if (req.file) {
@@ -145,10 +160,13 @@ exports.createLesson = async (req, res) => {
         fileName = localResult.fileName;
         fileSize = localResult.size;
         mimeType = localResult.mimeType;
+        publicUrl = `${req.protocol}://${req.get('host')}${localResult.url}`;
 
         // Vaqtinchalik faylni o'chirish
-        fs.unlinkSync(req.file.path);
-        tempFileCleaned = true;
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+          tempFileCleaned = true;
+        }
         console.log('✅ Vaqtinchalik fayl o\'chirildi');
 
       } catch (localError) {
@@ -186,6 +204,7 @@ exports.createLesson = async (req, res) => {
       course: courseId,
       module: moduleId,
       videoUrl: finalVideoUrl,
+      videoPublicUrl: publicUrl || finalVideoUrl,
       localFilePath: localFilePath,
       fileName: fileName,
       duration: duration || 0,
@@ -230,7 +249,6 @@ exports.createLesson = async (req, res) => {
     });
   }
 };
-
 // 📚 Kurs bo'yicha barcha darslarni olish
 exports.getLessonsByCourse = async (req, res) => {
   try {
@@ -260,6 +278,13 @@ exports.getLessonsByCourse = async (req, res) => {
       .limit(limit * 1)
       .skip((page - 1) * limit)
       .lean();
+
+    // Video URL larni to'liq URL ga o'zgartirish
+    lessons.forEach(lesson => {
+      if (lesson.videoUrl && lesson.videoUrl.startsWith('/uploads/')) {
+        lesson.videoUrl = `${req.protocol}://${req.get('host')}${lesson.videoUrl}`;
+      }
+    });
 
     const total = await Lesson.countDocuments(filter);
 
@@ -317,6 +342,11 @@ exports.getLessonById = async (req, res) => {
         success: false, 
         message: "Dars topilmadi" 
       });
+    }
+
+    // Agar video local saqlangan bo'lsa, to'liq URL ni qo'shish
+    if (lesson.videoUrl && lesson.videoUrl.startsWith('/uploads/')) {
+      lesson.videoUrl = `${req.protocol}://${req.get('host')}${lesson.videoUrl}`;
     }
 
     // Student uchun progress ma'lumotlari
@@ -392,7 +422,7 @@ exports.updateLesson = async (req, res) => {
       'video/x-msvideo', 'video/quicktime', 'video/x-matroska'
     ];
     
-    const maxFileSize = 500 * 1024 * 1024; // 500MB
+    const maxFileSize = 75 * 1024 * 1024; // 75MB - Sizning talabingiz
 
     if (req.file) {
       if (!allowedMimeTypes.includes(req.file.mimetype)) {
@@ -411,7 +441,7 @@ exports.updateLesson = async (req, res) => {
         
         return res.status(400).json({
           success: false,
-          message: "Video hajmi 500MB dan oshmasligi kerak"
+          message: "Video hajmi 75MB dan oshmasligi kerak"
         });
       }
     }
@@ -421,6 +451,7 @@ exports.updateLesson = async (req, res) => {
     let newFileName = null;
     let fileSize = lesson.fileSize;
     let mimeType = lesson.mimeType;
+    let publicUrl = lesson.videoPublicUrl;
 
     // Agar yangi video fayl yuklangan bo'lsa
     if (req.file) {
@@ -438,9 +469,12 @@ exports.updateLesson = async (req, res) => {
         newFileName = localResult.fileName;
         fileSize = localResult.size;
         mimeType = localResult.mimeType;
+        publicUrl = `${req.protocol}://${req.get('host')}${localResult.url}`;
 
-        fs.unlinkSync(req.file.path);
-        tempFileCleaned = true;
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+          tempFileCleaned = true;
+        }
         console.log('✅ Yangi video saqlandi:', localResult.fileName);
 
       } catch (localError) {
@@ -473,6 +507,7 @@ exports.updateLesson = async (req, res) => {
     // Agar yangi video URL berilgan bo'lsa
     if (finalVideoUrl) {
       updateData.videoUrl = finalVideoUrl;
+      updateData.videoPublicUrl = publicUrl;
       updateData.localFilePath = newLocalFilePath;
       updateData.fileName = newFileName;
       updateData.fileSize = fileSize;
@@ -486,6 +521,11 @@ exports.updateLesson = async (req, res) => {
     ).populate('module', 'title order')
      .populate('teacher', 'firstName lastName avatar')
      .populate('course', 'title');
+    
+    // Agar video local saqlangan bo'lsa, to'liq URL ni qo'shish
+    if (updatedLesson.videoUrl && updatedLesson.videoUrl.startsWith('/uploads/')) {
+      updatedLesson.videoUrl = `${req.protocol}://${req.get('host')}${updatedLesson.videoUrl}`;
+    }
     
     res.status(200).json({ 
       success: true, 
@@ -1046,7 +1086,7 @@ exports.uploadVideoOnly = async (req, res) => {
       'video/x-msvideo', 'video/quicktime', 'video/x-matroska'
     ];
     
-    const maxFileSize = 500 * 1024 * 1024; // 500MB
+    const maxFileSize = 75 * 1024 * 1024; // 75MB - Sizning talabingiz
 
     if (!allowedMimeTypes.includes(req.file.mimetype)) {
       fs.unlinkSync(req.file.path);
@@ -1066,18 +1106,23 @@ exports.uploadVideoOnly = async (req, res) => {
       
       return res.status(400).json({
         success: false,
-        message: "Video hajmi 500MB dan oshmasligi kerak",
-        maxSize: "500MB",
+        message: "Video hajmi 75MB dan oshmasligi kerak",
+        maxSize: "75MB",
         receivedSize: (req.file.size / (1024 * 1024)).toFixed(2) + " MB"
       });
     }
 
+    // Uploads papkasini tekshirish
+    ensureUploadsDir();
+    
     // Video ni local saqlash
     const localResult = await saveVideoLocally(req.file);
     
     // Vaqtinchalik faylni o'chirish
-    fs.unlinkSync(req.file.path);
-    tempFileCleaned = true;
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+      tempFileCleaned = true;
+    }
 
     console.log('✅ Video muvaffaqiyatli yuklandi:', localResult.fileName);
 
@@ -1087,6 +1132,7 @@ exports.uploadVideoOnly = async (req, res) => {
       message: "Video muvaffaqiyatli yuklandi",
       data: {
         videoUrl: localResult.url,
+        videoPublicUrl: `${req.protocol}://${req.get('host')}${localResult.url}`,
         fileName: localResult.fileName,
         fileSize: localResult.size,
         mimeType: localResult.mimeType

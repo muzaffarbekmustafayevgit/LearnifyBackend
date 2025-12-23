@@ -12,20 +12,33 @@ exports.createModule = async (req, res) => {
       return res.status(404).json({ message: "Kurs topilmadi" });
     }
 
-    // faqat o‘sha kurs teacher yaratishi mumkin
     if (course.teacher.toString() !== req.user.id && req.user.role !== 'superAdmin') {
       return res.status(403).json({ message: "Sizga ruxsat yo‘q" });
     }
 
-    const newModule = new Module({ title, description, course: courseId });
+    const newModule = new Module({
+      title,
+      description,
+      course: courseId
+    });
+
     await newModule.save();
 
-    res.status(201).json({ message: "Module yaratildi", module: newModule });
+    // 🔥 ENG MUHIM QATORLAR
+    course.modules.push(newModule._id);
+    await course.save();
+
+    res.status(201).json({
+      message: "Module yaratildi",
+      module: newModule
+    });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server xatosi" });
   }
 };
+
 
 // ✅ Module olish
 exports.getModule = async (req, res) => {
