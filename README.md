@@ -22,7 +22,7 @@ LearnifyBackend is a comprehensive backend API for an interactive learning platf
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/muzaffarbekmustafayevgit/LearnifyBackend.git
+git clone https://github.com/muzaffarbekmustafayev/LearnifyBackend.git
 cd LearnifyBackend
 ```
 
@@ -147,5 +147,6 @@ Special thanks to the LearnifyBackend team and all contributors who have helped 
 **⭐ If you like this project, please give it a star!**
 
 ---
+
 
 *Learnify - Elevating Education to New Heights*
