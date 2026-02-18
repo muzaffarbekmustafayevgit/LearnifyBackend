@@ -139,3 +139,13 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# User-uploaded and generated videos
+uploads/videos/
+public/videos/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.m4v
