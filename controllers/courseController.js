@@ -2,6 +2,7 @@
 const Course = require('../models/Course');
 const Module = require('../models/Module');
 const Lesson = require('../models/Lesson');
+const Enrollment = require('../models/Enrollment');
 const mongoose = require('mongoose');
 
 // ✅ Auth middleware tekshiruvi
@@ -251,6 +252,70 @@ exports.getAllCourses = async (req, res) => {
   }
 };
 
+// ✅ Teacher dashboard overview
+exports.getTeacherOverview = async (req, res) => {
+  try {
+    const teacherId =
+      req.user.role === 'admin' && req.query.teacherId ? req.query.teacherId : req.user.id;
+
+    const courseFilter = { teacher: teacherId, isDeleted: false };
+    const courses = await Course.find(courseFilter)
+      .select('_id title status enrollmentCount createdAt updatedAt category')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const courseIds = courses.map((course) => course._id);
+    const publishedCourses = courses.filter((course) => course.status === 'published').length;
+    const draftCourses = courses.filter((course) => course.status === 'draft').length;
+
+    let enrollments = [];
+    let totalLessons = 0;
+    let totalModules = 0;
+
+    if (courseIds.length > 0) {
+      [enrollments, totalLessons, totalModules] = await Promise.all([
+        Enrollment.find({ course: { $in: courseIds }, status: { $ne: 'cancelled' } })
+          .select('student status progress.completionPercentage course')
+          .lean(),
+        Lesson.countDocuments({ course: { $in: courseIds }, isDeleted: false }),
+        Module.countDocuments({ course: { $in: courseIds }, isDeleted: false }),
+      ]);
+    }
+
+    const uniqueStudents = new Set(enrollments.map((enrollment) => String(enrollment.student)));
+    const totalCompletion =
+      enrollments.reduce(
+        (acc, enrollment) => acc + (enrollment.progress?.completionPercentage || 0),
+        0
+      ) || 0;
+    const averageCompletion =
+      enrollments.length > 0 ? Number((totalCompletion / enrollments.length).toFixed(1)) : 0;
+
+    res.json({
+      success: true,
+      data: {
+        stats: {
+          totalCourses: courses.length,
+          publishedCourses,
+          draftCourses,
+          totalStudents: uniqueStudents.size,
+          totalEnrollments: enrollments.length,
+          totalLessons,
+          totalModules,
+          averageCompletion,
+        },
+        recentCourses: courses.slice(0, 5),
+      },
+    });
+  } catch (err) {
+    console.error('Get teacher overview error:', err);
+    res.status(500).json({
+      success: false,
+      message: "Teacher overview ma'lumotlarini olishda xatolik: " + err.message,
+    });
+  }
+};
+
 // ✅ Kursni olish
 exports.getCourse = async (req, res) => {
   try {
@@ -449,10 +514,12 @@ exports.publishCourse = async (req, res) => {
     }
 
     // Kursni nashr qilish uchun minimal talablar
-    const totalLessons = course.modules.reduce(
-      (acc, module) => acc + (module.lessons?.length || 0),
-      0
-    );
+    const moduleIds = (course.modules || []).map((m) => m._id);
+    const totalLessons = await Lesson.countDocuments({
+      course: course._id,
+      module: { $in: moduleIds },
+      isDeleted: false
+    });
 
     if (!course.modules || course.modules.length === 0) {
       return res.status(400).json({
@@ -468,8 +535,28 @@ exports.publishCourse = async (req, res) => {
       });
     }
 
+    const lessonCounts = await Lesson.aggregate([
+      {
+        $match: {
+          course: course._id,
+          module: { $in: moduleIds },
+          isDeleted: false
+        }
+      },
+      {
+        $group: {
+          _id: '$module',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const moduleLessonMap = new Map(
+      lessonCounts.map((item) => [item._id.toString(), item.count])
+    );
+
     const modulesWithoutLessons = course.modules.filter(
-      module => !module.lessons || module.lessons.length === 0
+      (module) => !moduleLessonMap.get(module._id.toString())
     );
 
     if (modulesWithoutLessons.length > 0) {
@@ -746,6 +833,11 @@ exports.getCourseStats = async (req, res) => {
       });
     }
 
+    const enrollments = await Enrollment.find({ course: id })
+      .populate('student', 'name email avatar')
+      .select('student status progress enrolledAt')
+      .lean();
+
     // Statistik ma'lumotlar
     const totalLessons = course.modules?.reduce((acc, module) =>
       acc + (module.lessons?.length || 0), 0) || 0;
@@ -754,9 +846,20 @@ exports.getCourseStats = async (req, res) => {
       acc + module.lessons?.reduce((lessonAcc, lesson) =>
         lessonAcc + (lesson.duration || 0), 0), 0) || 0;
 
+    const completionRate = enrollments.length
+      ? Number(
+          (
+            enrollments.reduce(
+              (acc, enrollment) => acc + (enrollment.progress?.completionPercentage || 0),
+              0
+            ) / enrollments.length
+          ).toFixed(1)
+        )
+      : 0;
+
     const stats = {
-      totalStudents: course.students?.length || 0,
-      completionRate: 0,
+      totalStudents: enrollments.length || course.students?.length || 0,
+      completionRate,
       averageRating: course.rating?.average || 0,
       totalLessons,
       totalDuration,
@@ -766,7 +869,20 @@ exports.getCourseStats = async (req, res) => {
 
     res.json({
       success: true,
-      data: { stats }
+      data: {
+        stats,
+        students: enrollments.map((enrollment) => ({
+          studentId: enrollment.student?._id,
+          studentName: enrollment.student?.name || 'Nomaʼlum',
+          studentEmail: enrollment.student?.email || '',
+          avatar: enrollment.student?.avatar || '',
+          status: enrollment.status,
+          completion: enrollment.progress?.completionPercentage || 0,
+          completedLessonsCount: enrollment.progress?.completedLessonsCount || 0,
+          totalLessons: enrollment.progress?.totalLessons || totalLessons,
+          enrolledAt: enrollment.enrolledAt,
+        })),
+      }
     });
 
   } catch (err) {

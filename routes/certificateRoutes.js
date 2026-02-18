@@ -1,8 +1,9 @@
 const express = require('express');
 const { generateCertificate, getMyCertificates } = require('../controllers/certificateController');
-const { requireRole } = require('../middlewares/authMiddleware'); // requireRole ni import qilamiz
+const { verifyToken, requireRole } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
+router.use(verifyToken);
 
 // 🔹 Sertifikatlar
 router.post('/:courseId', requireRole(['student']), generateCertificate); // Kurs tugagach sertifikat olish

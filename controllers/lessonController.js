@@ -3,6 +3,8 @@ const Lesson = require("../models/Lesson");
 const Progress = require("../models/Progress");
 const Certificate = require("../models/Certificate");
 const User = require("../models/User");
+const Module = require("../models/Module");
+const Course = require("../models/Course");
 const fs = require('fs');
 const path = require('path');
 
@@ -218,6 +220,21 @@ exports.createLesson = async (req, res) => {
     });
 
     await lesson.save();
+
+    // Modul va kurs bilan bog'lanishni sinxron saqlash
+    if (moduleId) {
+      await Module.findByIdAndUpdate(
+        moduleId,
+        { $addToSet: { lessons: lesson._id } },
+        { new: true }
+      );
+    }
+
+    await Course.findByIdAndUpdate(
+      courseId,
+      { $addToSet: { lessons: lesson._id } },
+      { new: true }
+    );
     
     // Populate qilish
     await lesson.populate('module', 'title order');
@@ -578,6 +595,19 @@ exports.deleteLesson = async (req, res) => {
     lesson.status = 'archived';
     lesson.deletedAt = new Date();
     await lesson.save();
+
+    // Modul va kursdagi reference'larni tozalash
+    if (lesson.module) {
+      await Module.findByIdAndUpdate(lesson.module, {
+        $pull: { lessons: lesson._id }
+      });
+    }
+
+    if (lesson.course) {
+      await Course.findByIdAndUpdate(lesson.course, {
+        $pull: { lessons: lesson._id }
+      });
+    }
 
     res.status(200).json({ 
       success: true, 

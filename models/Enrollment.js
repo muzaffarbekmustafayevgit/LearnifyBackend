@@ -67,7 +67,12 @@ enrollmentSchema.index({ student: 1, course: 1 }, { unique: true });
 
 // Progressni yangilash metodlari
 enrollmentSchema.methods.updateProgress = function(lessonId) {
-  if (!this.progress.completedLessons.includes(lessonId)) {
+  const lessonIdStr = lessonId.toString();
+  const hasLesson = this.progress.completedLessons.some(
+    (id) => id.toString() === lessonIdStr
+  );
+
+  if (!hasLesson) {
     this.progress.completedLessons.push(lessonId);
     this.progress.completedLessonsCount = this.progress.completedLessons.length;
     this.progress.lastLessonCompleted = new Date();
@@ -81,7 +86,7 @@ enrollmentSchema.methods.updateProgress = function(lessonId) {
     this.progress.lastAccessed = new Date();
     
     // Agar barcha darslar tugallangan bo'lsa
-    if (this.progress.completionPercentage >= 95) { // 95% dan ko'p bo'lsa completed deb hisoblaymiz
+    if (this.progress.completionPercentage >= 100) {
       this.status = 'completed';
       this.completedAt = new Date();
     }
@@ -108,7 +113,7 @@ enrollmentSchema.methods.recalculateProgress = async function() {
   }
   
   // Statusni yangilash
-  if (this.progress.completionPercentage >= 95 && this.status !== 'completed') {
+  if (this.progress.completionPercentage >= 100 && this.status !== 'completed') {
     this.status = 'completed';
     this.completedAt = new Date();
   }

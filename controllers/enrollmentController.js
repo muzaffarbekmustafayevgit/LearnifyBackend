@@ -1,7 +1,15 @@
 const Enrollment = require('../models/Enrollment');
 const Course = require('../models/Course');
 const User = require('../models/User');
+const Certificate = require('../models/Certificate');
+const generateCertificateFile = require('../utils/generateCertificate');
 const mongoose = require('mongoose');
+
+const generateCertificateId = () =>
+  `CERT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+const generateVerificationCode = () =>
+  `VRF-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
 
 /**
  * ✅ Kursga yozilish (bepul kurslar uchun)
@@ -465,11 +473,78 @@ exports.completeLesson = async (req, res) => {
 
     console.log('5. Lesson found:', lesson.title);
 
+    // Har safar jami published darslarni qayta hisoblash (dynamic progress uchun)
+    const totalLessons = await Lesson.countDocuments({
+      course: courseId,
+      isDeleted: false,
+      status: 'published'
+    }).session(session);
+    enrollment.progress.totalLessons = totalLessons;
+
     // Darsni tugallangan deb belgilash
     enrollment.updateProgress(lessonId);
     await enrollment.save({ session });
 
     console.log('6. Lesson completed, progress updated');
+
+    const progressPercentage = enrollment.progress?.completionPercentage || 0;
+    let certificate = null;
+
+    // 100% bo'lganda avtomatik sertifikat berish
+    if (progressPercentage >= 100) {
+      const existingCertificate = await Certificate.findOne({
+        student: studentId,
+        course: courseId
+      }).session(session);
+
+      if (!existingCertificate) {
+        const course = await Course.findById(courseId)
+          .select('title teacher')
+          .session(session);
+
+        const filePath = await generateCertificateFile(studentId, course);
+        const certificateId = generateCertificateId();
+        const verificationCode = generateVerificationCode();
+
+        const [createdCertificate] = await Certificate.create(
+          [
+            {
+              student: studentId,
+              course: courseId,
+              teacher: course?.teacher,
+              certificateId,
+              title: `${course?.title || 'Course'} Completion Certificate`,
+              description: "Kursni 100% yakunlaganlik uchun berildi",
+              filePath,
+              fileType: 'pdf',
+              progressPercentage: progressPercentage,
+              finalScore: progressPercentage,
+              maxScore: 100,
+              conditionMet: true,
+              requirementsMet: {
+                progress: true,
+                score: true,
+                quizzes: true,
+                assignments: true,
+                time: true
+              },
+              verification: {
+                code: verificationCode
+              },
+              metadata: {
+                completionDate: new Date()
+              },
+              createdBy: studentId
+            }
+          ],
+          { session }
+        );
+
+        certificate = createdCertificate;
+      } else {
+        certificate = existingCertificate;
+      }
+    }
 
     // Yangilangan enrollmentni populate qilish
     await enrollment.populate([
@@ -500,7 +575,14 @@ exports.completeLesson = async (req, res) => {
           _id: lesson._id,
           title: lesson.title,
           completed: true
-        }
+        },
+        certificate: certificate
+          ? {
+              id: certificate._id,
+              certificateId: certificate.certificateId,
+              issuedAt: certificate.issuedAt
+            }
+          : null
       }
     });
 

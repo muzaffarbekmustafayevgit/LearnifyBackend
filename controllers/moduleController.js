@@ -133,12 +133,31 @@ exports.getModulesByCourse = async (req, res) => {
   try {
     const { courseId } = req.params;
     const modules = await Module.find({ course: courseId, isDeleted: false })
-      .populate('lessons', 'title duration type')
-      .sort({ order: 1 });
+      .sort({ order: 1 })
+      .lean();
+
+    const modulesWithLessons = await Promise.all(
+      modules.map(async (module) => {
+        const lessons = await Lesson.find({
+          course: courseId,
+          module: module._id,
+          isDeleted: false,
+          status: { $ne: 'archived' }
+        })
+          .select('title duration type order videoUrl status')
+          .sort({ order: 1 })
+          .lean();
+
+        return {
+          ...module,
+          lessons
+        };
+      })
+    );
 
     res.status(200).json({
       success: true,
-      data: { modules },
+      data: { modules: modulesWithLessons },
     });
   } catch (err) {
     console.error(err);

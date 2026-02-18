@@ -21,6 +21,7 @@ router.use(verifyToken);
 
 // 👤 Mening kurslarim (faqat teacher/admin)
 router.get("/my-courses", requireRole(["teacher", "admin"]), courseController.getMyCourses);
+router.get("/teacher/overview", requireRole(["teacher", "admin"]), courseController.getTeacherOverview);
 
 // 👑 ADMIN: Barcha kurslarni olish (faqat admin)
 router.get("/admin/all-courses", requireRole(["admin"]), courseController.getAllCoursesAdmin);

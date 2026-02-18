@@ -1,53 +1,106 @@
-// ✅ controllers/certificateController.js (NEW or UPDATED)
 const Certificate = require('../models/Certificate');
-const Progress = require('../models/Progress'); // Progress modelni ham chaqirish
-const User = require('../models/User'); // Kerak bo'lsa
+const Enrollment = require('../models/Enrollment');
+const Course = require('../models/Course');
+const generateCertificateFile = require('../utils/generateCertificate');
 
-// Funksiyani umumiy qilib yaratish
+const generateCertificateId = () =>
+  `CERT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+const generateVerificationCode = () =>
+  `VRF-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+
 exports.generateCertificate = async (req, res) => {
   try {
     const { courseId } = req.params;
     const studentId = req.user.id;
 
-    // Talaba progressini tekshirish
-    const progress = await Progress.findOne({ student: studentId, course: courseId });
-    if (!progress || progress.percentage < 70) {
-      return res.status(400).json({ message: 'Kurs tugallanmagan yoki shartlar bajarilmagan' });
+    const enrollment = await Enrollment.findOne({ student: studentId, course: courseId });
+    if (!enrollment) {
+      return res.status(404).json({
+        success: false,
+        message: "Siz ushbu kursga yozilmagansiz"
+      });
     }
 
-    // Sertifikat allaqachon berilganini tekshirish
-    const existingCert = await Certificate.findOne({ student: studentId, course: courseId });
-    if (existingCert) {
-      return res.status(200).json({ message: 'Sertifikat allaqachon mavjud', certificate: existingCert });
+    const completion = enrollment.progress?.completionPercentage || 0;
+    if (completion < 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Sertifikat olish uchun kursni 100% yakunlang",
+        data: { completion }
+      });
     }
 
-    // Yangi sertifikat yaratish
-    const newCertificate = await Certificate.create({
+    const existing = await Certificate.findOne({ student: studentId, course: courseId });
+    if (existing) {
+      return res.status(200).json({
+        success: true,
+        message: "Sertifikat allaqachon yaratilgan",
+        data: { certificate: existing }
+      });
+    }
+
+    const course = await Course.findById(courseId).select('title teacher');
+    const filePath = await generateCertificateFile(studentId, course);
+
+    const certificate = await Certificate.create({
       student: studentId,
       course: courseId,
-      percentage: progress.percentage,
-      issuedAt: new Date(),
+      teacher: course?.teacher,
+      certificateId: generateCertificateId(),
+      title: `${course?.title || 'Course'} Completion Certificate`,
+      description: "Kursni 100% yakunlaganlik uchun berildi",
+      filePath,
+      fileType: 'pdf',
+      progressPercentage: completion,
+      finalScore: completion,
+      maxScore: 100,
+      conditionMet: true,
+      requirementsMet: {
+        progress: true,
+        score: true,
+        quizzes: true,
+        assignments: true,
+        time: true
+      },
+      verification: {
+        code: generateVerificationCode()
+      },
+      metadata: {
+        completionDate: new Date()
+      },
+      createdBy: studentId
     });
 
-    // Progressni yangilash
-    progress.certificateIssued = true;
-    await progress.save();
-
-    res.status(201).json({ message: 'Sertifikat muvaffaqiyatli yaratildi', certificate: newCertificate });
-
+    res.status(201).json({
+      success: true,
+      message: "Sertifikat muvaffaqiyatli yaratildi",
+      data: { certificate }
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Sertifikat yaratishda xatolik', error: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Sertifikat yaratishda xatolik",
+      error: err.message
+    });
   }
 };
 
-// Talabaning barcha sertifikatlarini olish
 exports.getMyCertificates = async (req, res) => {
   try {
     const certificates = await Certificate.find({ student: req.user.id })
-      .populate('course', 'title');
+      .populate('course', 'title')
+      .sort({ issuedAt: -1 });
 
-    res.json({ certificates });
+    res.json({
+      success: true,
+      data: { certificates }
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Sertifikatlarni olishda xatolik', error: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Sertifikatlarni olishda xatolik",
+      error: err.message
+    });
   }
 };
